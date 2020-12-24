@@ -1,0 +1,28 @@
+{
+  "name": "generate-roam-site",
+  "description": "Description for generate-roam-site",
+  "version": "0.0.0",
+  "main": "dist/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "ncc build src/index.ts -o dist",
+    "format": "prettier --write \"src/**/*.tsx\"",
+    "lint": "eslint . --ext .ts,.tsx",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm t",
+    "preversion": "npm run lint",
+    "version": "npm run format && git add -A src",
+    "postversion": "git push origin main && git push --tags",
+    "pretest": "npm run lint",
+    "test": "jest --config jestconfig.json"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "^16.8.0 || ^17",
+    "react-dom": "^16.8.0 || ^17"
+  },
+  "dependencies": {
+    "react": "^17.0.1",
+    "react-dom": "^17.0.1"
+  }
+}
