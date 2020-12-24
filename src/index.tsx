@@ -1,7 +1,5 @@
 import React from "react";
 
-const Package = () => (
-  <div>Fill out component!</div>
-);
+const Package: React.FunctionComponent = () => <div>Fill out component!</div>;
 
-export default TimeSelector;
+export default Package;
