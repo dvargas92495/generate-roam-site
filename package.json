@@ -1,7 +1,7 @@
 {
   "name": "generate-roam-site",
   "description": "Description for generate-roam-site",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
