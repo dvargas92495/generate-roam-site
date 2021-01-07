@@ -1,5 +1,7 @@
 # generate-roam-site
 
+Generate a static site from a Roam Graph.
+
 ## Usage
 
 ```javascript
