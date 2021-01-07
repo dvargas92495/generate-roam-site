@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "ncc build src/index.ts -o dist",
-    "postbuild": "copyfiles -a -u 2 node_modules/puppeteer/.local-chromium/**/* dist",
+    "postbuild": "copyfiles -a -u 2 ./node_modules/puppeteer/.local-chromium/**/* dist",
     "format": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint . --ext .ts",
     "prepublishOnly": "npm run build",
