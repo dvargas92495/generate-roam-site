@@ -281,8 +281,11 @@ export const run = async ({
 
   return puppeteer
     .launch(
-      process.env.NODE_ENV === "test"
-        ? {}
+      process.platform === "win32"
+        ? {
+            executablePath:
+              "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+          }
         : {
             executablePath: "/usr/bin/google-chrome-stable",
           }
