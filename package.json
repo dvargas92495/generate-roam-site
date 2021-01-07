@@ -1,7 +1,7 @@
 {
   "name": "generate-roam-site",
   "description": "Generate a static site from a Roam Graph.",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
