@@ -276,7 +276,7 @@ export const run = async ({
     error: (s: string) => void;
   };
 }): Promise<void> => {
-  const { info, error } = logger;  
+  const { info, error } = logger;
   info(`Hello ${roamUsername}! Fetching from ${roamGraph}...`);
 
   return puppeteer
