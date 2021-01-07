@@ -42,5 +42,8 @@
   },
   "files": [
     "/dist"
-  ]
+  ],
+  "config": {
+    "puppeteer_download_path": "./node_modules/puppeteer/.local-chromium"
+  }
 }
