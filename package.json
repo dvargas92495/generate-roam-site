@@ -3,7 +3,7 @@
   "description": "Description for generate-roam-site",
   "version": "0.3.2",
   "main": "dist/index.js",
-  "types": "lib/index.d.ts",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "ncc build src/index.ts -o dist",
     "format": "prettier --write \"src/**/*.ts\"",
