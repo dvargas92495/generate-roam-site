@@ -16,10 +16,6 @@
     "test": "jest --config jestconfig.json"
   },
   "license": "MIT",
-  "peerDependencies": {
-    "react": "^16.8.0 || ^17",
-    "react-dom": "^16.8.0 || ^17"
-  },
   "dependencies": {
     "copyfiles": "^2.4.1",
     "jszip": "^3.5.0",

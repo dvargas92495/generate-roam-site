@@ -2,6 +2,14 @@
 
 Generate a static site from a Roam Graph.
 
+## Requirements
+
+You must have a version of google chrome installed.
+
+Windows: `C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`
+
+Linux: `/usr/bin/google-chrome-stable`
+
 ## Usage
 
 ```javascript
@@ -11,7 +19,7 @@ await run({
   roamGraph: "dvargas92495",
   roamUsername: "dvargas92495@gmail.com",
   roamPassword: process.env.ROAM_PASSWORD,
-}).then(() => console.log('Success!'));
+}).then(() => console.log("Success!"));
 ```
 
 Most other configuration happens from your Roam DB, on a page called `roam/js/public-garden`. The following configuration options are supported:
@@ -24,6 +32,7 @@ Most other configuration happens from your Roam DB, on a page called `roam/js/pu
   - It supports a few variables that can be interpolated:
     - `PAGE_NAME` - The name of the page
     - `PAGE_CONTENT` - The content of the page
+    - `REFERENCES` - An array of pages that reference the current page
   - The default template looks like
 
 ```html
@@ -42,8 +51,23 @@ Most other configuration happens from your Roam DB, on a page called `roam/js/pu
   </head>
   <body>
     <div id="content">${PAGE_CONTENT}</div>
+    <div id="references">
+      <ul>
+        ${REFERENCES}
+      </ul>
+    </div>
   </body>
 </html>
+```
+
+- Reference Template - An HTML Code block that will be used as the template for every page reference. The REFERENCES variable interpolates to all references each rendered as one instance of the template
+  - It supports a few variables that can be interpolated:
+    - `REFERENCE` - The name of the page referencing the current page
+    - `LINK` - The url of the page html file
+  - The default template looks like
+
+```html
+<li><a href="${LINK}">${REFERENCE}</a></li>
 ```
 
 Here's an example configuration, that uses the `Personal Website` page as the entry point and includes all pages that start with a `P`:

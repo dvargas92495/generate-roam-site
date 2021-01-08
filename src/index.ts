@@ -12,7 +12,23 @@ type Config = {
   titleFilter: (title: string) => boolean;
   contentFilter: (content: string) => boolean;
   template: string;
+  referenceTemplate: string;
 };
+
+type RoamBlock = {
+  title?: string;
+  time?: number;
+  id?: number;
+  uid?: string;
+};
+
+declare global {
+  interface Window {
+    roamAlphaAPI: {
+      q: (query: string) => RoamBlock[][];
+    };
+  }
+}
 
 const extractTag = (tag: string) =>
   tag.startsWith("#[[") && tag.endsWith("]]")
@@ -44,8 +60,14 @@ export const defaultConfig = {
 <div id="content">
 $\{PAGE_CONTENT}
 </div>
+<div id="references">
+<ul>
+$\{REFERENCES}
+</ul>
+</div>
 </body>
 </html>`,
+  referenceTemplate: '<li><a href="${LINK}">${REFERENCE}</a></li>',
 };
 
 type Node = {
@@ -108,9 +130,13 @@ const getConfigFromPage = async (page: jszip.JSZipObject) => {
   const indexNode = getConfigNode("index");
   const filterNode = getConfigNode("filter");
   const templateNode = getConfigNode("template");
-  const template = (templateNode?.children || [])
-    .map((s) => s.text.match(new RegExp("```html\n(.*)```", "s")))
-    .find((s) => !!s)?.[1];
+  const referenceTemplateNode = getConfigNode("reference template");
+  const getCode = (node?: Node) =>
+    (node?.children || [])
+      .map((s) => s.text.match(new RegExp("```html\n(.*)```", "s")))
+      .find((s) => !!s)?.[1];
+  const template = getCode(templateNode);
+  const referenceTemplate = getCode(referenceTemplateNode);
   const withIndex: Partial<Config> = indexNode?.children?.length
     ? { index: extractTag(indexNode.children[0].text.trim()) }
     : {};
@@ -128,10 +154,14 @@ const getConfigFromPage = async (page: jszip.JSZipObject) => {
         template,
       }
     : {};
+  const withReferenceTemplate: Partial<Config> = referenceTemplate
+    ? { referenceTemplate }
+    : {};
   return {
     ...withIndex,
     ...withFilter,
     ...withTemplate,
+    ...withReferenceTemplate,
   };
 };
 
@@ -225,42 +255,42 @@ export const renderHtmlFromPage = ({
   pageNames,
 }: {
   outputPath: string;
-  pageContent: string;
+  pageContent: { content: string; references: string[] };
   p: string;
   config: Config;
   pageNames: string[];
 }): void => {
+  const { content, references } = pageContent;
   const preMarked = prepareContent({
-    content: pageContent,
+    content,
     pageNames,
     index: config.index,
   });
-  const content = marked(preMarked);
+  const markedContent = marked(preMarked);
   const name = convertPageToName(p);
-  const hydratedHtml = hydrateHTML({
-    name,
-    content,
-    template: config.template,
-  });
+  const hydratedHtml = config.template
+    .replace(/\${PAGE_NAME}/g, name)
+    .replace(/\${PAGE_CONTENT}/g, markedContent)
+    .replace(
+      /\${REFERENCES}/,
+      references
+        .map((r) =>
+          config.referenceTemplate.replace(/\${REFERENCE}/, r).replace(
+            /\${LINK}/,
+            convertPageToHtml({
+              name: r,
+              index: config.index,
+            })
+          )
+        )
+        .join("\n")
+    );
   const htmlFileName = convertPageToHtml({
     name,
     index: config.index,
   });
   fs.writeFileSync(path.join(outputPath, htmlFileName), hydratedHtml);
 };
-
-const hydrateHTML = ({
-  name,
-  content,
-  template,
-}: {
-  name: string;
-  content: string;
-  template: string;
-}) =>
-  template
-    .replace(/\${PAGE_NAME}/g, name)
-    .replace(/\${PAGE_CONTENT}/g, content);
 
 export const run = async ({
   roamUsername,
@@ -316,6 +346,7 @@ export const run = async ({
         await page.waitForSelector(`a[href="#/app/${roamGraph}"]`, {
           timeout: 120000,
         });
+        info("Done waiting for graph to be selectable");
         await page.click(`a[href="#/app/${roamGraph}"]`);
         info(`entering graph ${new Date().toLocaleTimeString()}`);
         await page.waitForSelector("span.bp3-icon-more", {
@@ -343,8 +374,6 @@ export const run = async ({
           );
         });
         info(`done waiting ${new Date().toLocaleTimeString()}`);
-        await page.close();
-        await browser.close();
         const data = await fs.readFileSync(zipPath);
         const zip = await jszip.loadAsync(data);
 
@@ -356,17 +385,48 @@ export const run = async ({
             : Promise.resolve({}))),
         } as Config;
 
-        const pages: { [key: string]: string } = {};
+        const pages: {
+          [key: string]: { content: string; references: string[] };
+        } = {};
         await Promise.all(
           Object.keys(zip.files)
             .filter(config.titleFilter)
             .map(async (k) => {
               const content = await zip.files[k].async("text");
               if (config.contentFilter(content)) {
-                pages[k] = content;
+                const references = await page.evaluate((pageName: string) => {
+                  const t = pageName.replace(/\.md$/, "");
+                  const findParentBlock: (b: RoamBlock) => RoamBlock = (
+                    b: RoamBlock
+                  ) =>
+                    b.title
+                      ? b
+                      : findParentBlock(
+                          window.roamAlphaAPI.q(
+                            `[:find (pull ?e [*]) :where [?e :block/children ${b.id}]]`
+                          )[0][0] as RoamBlock
+                        );
+                  const parentBlocks = window.roamAlphaAPI
+                    .q(
+                      `[:find (pull ?parentPage [*]) :where [?parentPage :block/children ?referencingBlock] [?referencingBlock :block/refs ?referencedPage] [?referencedPage :node/title "${t.replace(
+                        /"/g,
+                        '\\"'
+                      )}"]]`
+                    )
+                    .filter((block) => block.length);
+                  const blocks = parentBlocks.map((b) =>
+                    findParentBlock(b[0])
+                  ) as RoamBlock[];
+                  return Array.from(
+                    new Set(blocks.map((b) => b.title || "").filter((t) => !!t))
+                  );
+                }, k);
+                pages[k] = { content, references };
               }
             })
         );
+        await page.close();
+        await browser.close();
         const pageNames = Object.keys(pages).map(convertPageToName);
         info(`resolving ${pageNames.length} pages`);
         info(`Here are some: ${pageNames.slice(0, 5)}`);
@@ -375,7 +435,7 @@ export const run = async ({
             try {
               fs.writeFileSync(
                 path.join(outputPath, encodeURIComponent(p)),
-                pages[p]
+                pages[p].content
               );
             } catch {
               console.warn("failed to output md for", p);
