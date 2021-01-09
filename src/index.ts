@@ -293,12 +293,12 @@ export const renderHtmlFromPage = ({
     .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
     .replace(
-      /\${REFERENCES}/,
+      /\${REFERENCES}/g,
       references
         .filter((r) => pageNameSet.has(r))
         .map((r) =>
-          config.referenceTemplate.replace(/\${REFERENCE}/, r).replace(
-            /\${LINK}/,
+          config.referenceTemplate.replace(/\${REFERENCE}/g, r).replace(
+            /\${LINK}/g,
             convertPageToHtml({
               name: r,
               index: config.index,
