@@ -97,8 +97,7 @@ const getContentRuleFromNode = (n: Node) => {
   }
 };
 
-const getConfigFromPage = async (page: jszip.JSZipObject) => {
-  const content = await page.async("text");
+const getParsedTree = (content: string) => {
   const contentParts = content.split("\n");
   const parsedTree: Node[] = [];
   let currentNode = { children: parsedTree };
@@ -124,6 +123,12 @@ const getConfigFromPage = async (page: jszip.JSZipObject) => {
       currentNode.children.push(node);
     }
   }
+  return parsedTree;
+};
+
+const getConfigFromPage = async (page: jszip.JSZipObject) => {
+  const content = await page.async("text");
+  const parsedTree = getParsedTree(content);
 
   const getConfigNode = (key: string) =>
     parsedTree.find((n) => n.text.trim().toUpperCase() === key.toUpperCase());
@@ -165,8 +170,7 @@ const getConfigFromPage = async (page: jszip.JSZipObject) => {
   };
 };
 
-const convertPageToName = (p: string) =>
-  p.substring(0, p.length - ".md".length);
+const convertPageToName = (p: string) => p.replace(/\.md$/, "");
 
 const convertPageToHtml = ({ name, index }: { name: string; index: string }) =>
   name === index
@@ -190,7 +194,14 @@ const prepareContent = ({
     .filter((l) => {
       const numSpaces = l.search(/\S/);
       const indent = numSpaces / 4;
-      if (ignoreIndent >= 0 && indent > ignoreIndent) {
+      if (ignoreIndent >= 0 && (indent > ignoreIndent || codeBlockIndent > 0)) {
+        if (l.includes("```")) {
+          if (codeBlockIndent >= 0) {
+            codeBlockIndent = -1;
+          } else {
+            codeBlockIndent = indent;
+          }
+        }
         return false;
       }
       const bullet = l.substring(numSpaces);
@@ -241,6 +252,10 @@ const prepareContent = ({
       (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
     )
     .replace(
+      new RegExp(`(${pageNameOrs})::`, "g"),
+      (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
+    )
+    .replace(
       new RegExp(`#(${hashOrs})`, "g"),
       (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
     )
@@ -255,25 +270,32 @@ export const renderHtmlFromPage = ({
   pageNames,
 }: {
   outputPath: string;
-  pageContent: { content: string; references: string[] };
+  pageContent: {
+    content: string;
+    references: string[];
+    title: string;
+    head: string;
+  };
   p: string;
   config: Config;
   pageNames: string[];
 }): void => {
-  const { content, references } = pageContent;
+  const { content, references, title, head } = pageContent;
   const preMarked = prepareContent({
     content,
     pageNames,
     index: config.index,
   });
+  const pageNameSet = new Set(pageNames);
   const markedContent = marked(preMarked);
-  const name = convertPageToName(p);
   const hydratedHtml = config.template
-    .replace(/\${PAGE_NAME}/g, name)
+    .replace('</head>', `${head}</head>`)
+    .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
     .replace(
       /\${REFERENCES}/,
       references
+        .filter(r => pageNameSet.has(r))
         .map((r) =>
           config.referenceTemplate.replace(/\${REFERENCE}/, r).replace(
             /\${LINK}/,
@@ -286,7 +308,7 @@ export const renderHtmlFromPage = ({
         .join("\n")
     );
   const htmlFileName = convertPageToHtml({
-    name,
+    name: convertPageToName(p),
     index: config.index,
   });
   fs.writeFileSync(path.join(outputPath, htmlFileName), hydratedHtml);
@@ -386,16 +408,21 @@ export const run = async ({
         } as Config;
 
         const pages: {
-          [key: string]: { content: string; references: string[] };
+          [key: string]: {
+            content: string;
+            references: string[];
+            title: string;
+            head: string;
+          };
         } = {};
         await Promise.all(
           Object.keys(zip.files)
             .filter(config.titleFilter)
             .map(async (k) => {
               const content = await zip.files[k].async("text");
+              const pageName = convertPageToName(k);
               if (config.contentFilter(content)) {
                 const references = await page.evaluate((pageName: string) => {
-                  const t = pageName.replace(/\.md$/, "");
                   const findParentBlock: (b: RoamBlock) => RoamBlock = (
                     b: RoamBlock
                   ) =>
@@ -408,7 +435,7 @@ export const run = async ({
                         );
                   const parentBlocks = window.roamAlphaAPI
                     .q(
-                      `[:find (pull ?parentPage [*]) :where [?parentPage :block/children ?referencingBlock] [?referencingBlock :block/refs ?referencedPage] [?referencedPage :node/title "${t.replace(
+                      `[:find (pull ?parentPage [*]) :where [?parentPage :block/children ?referencingBlock] [?referencingBlock :block/refs ?referencedPage] [?referencedPage :node/title "${pageName.replace(
                         /"/g,
                         '\\"'
                       )}"]]`
@@ -421,7 +448,18 @@ export const run = async ({
                     new Set(blocks.map((b) => b.title || "").filter((t) => !!t))
                   );
                 }, k);
-                pages[k] = { content, references };
+                const titleMatch = content.match(
+                  "roam/js/public-garden/title::(.*)\n"
+                );
+                const headMatch = content.match(
+                  new RegExp(
+                    /roam\/js\/public-garden\/head::\s*- ```html\n(.*)```/,
+                    "s"
+                  )
+                );
+                const title = titleMatch ? titleMatch[1].trim() : pageName;
+                const head = headMatch ? headMatch[1] : "";
+                pages[k] = { content, references, title, head };
               }
             })
         );

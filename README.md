@@ -22,6 +22,8 @@ await run({
 }).then(() => console.log("Success!"));
 ```
 
+### Roam Configuration
+
 Most other configuration happens from your Roam DB, on a page called `roam/js/public-garden`. The following configuration options are supported:
 
 - Index - The page name that will serve as the entry point of the site. Could be raw text or a page link.
@@ -86,4 +88,14 @@ Here's an example configuration, that uses the `Blog Post` page as the entry poi
   - Tagged With
     - Blog Post
 
+### Per Page Configuration
+
 You could ignore specific blocks in pages that are included. Nest everything that you would like to keep on the page but have filtered out of the static site under a block that just says `[[roam/js/public-garden/ignore]]`.
+
+You could override any roam page's default title with the `roam/js/public-garden/title::` attribute. The value set to the right of this attribute will be used in place of the `PAGE_NAME` variable during template interpolation.
+
+You could add anything to a page's head with the `roam/js/public-garden/head::` attribute. The HTML code block defined as a **child** of this block will be injected into this page's head. 
+
+![](./img/page-config.png)
+
+Note, that while you'll usually want to have these attributes nested within the ignore block, it's not a strict requirement.
