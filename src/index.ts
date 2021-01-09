@@ -253,7 +253,7 @@ const prepareContent = ({
     )
     .replace(
       new RegExp(`(${pageNameOrs})::`, "g"),
-      (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
+      (_, name) => `**[${name}:](/${convertPageToHtml({ name, index })})**`
     )
     .replace(
       new RegExp(`#(${hashOrs})`, "g"),
@@ -421,7 +421,7 @@ export const run = async ({
             .map(async (k) => {
               const content = await zip.files[k].async("text");
               const pageName = convertPageToName(k);
-              if (config.contentFilter(content)) {
+              if (pageName === config.index || config.contentFilter(content)) {
                 const references = await page.evaluate((pageName: string) => {
                   const findParentBlock: (b: RoamBlock) => RoamBlock = (
                     b: RoamBlock
@@ -447,7 +447,7 @@ export const run = async ({
                   return Array.from(
                     new Set(blocks.map((b) => b.title || "").filter((t) => !!t))
                   );
-                }, k);
+                }, pageName);
                 const titleMatch = content.match(
                   "roam/js/public-garden/title::(.*)\n"
                 );
