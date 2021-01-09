@@ -289,13 +289,13 @@ export const renderHtmlFromPage = ({
   const pageNameSet = new Set(pageNames);
   const markedContent = marked(preMarked);
   const hydratedHtml = config.template
-    .replace('</head>', `${head}</head>`)
+    .replace("</head>", `${head}</head>`)
     .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
     .replace(
       /\${REFERENCES}/,
       references
-        .filter(r => pageNameSet.has(r))
+        .filter((r) => pageNameSet.has(r))
         .map((r) =>
           config.referenceTemplate.replace(/\${REFERENCE}/, r).replace(
             /\${LINK}/,
