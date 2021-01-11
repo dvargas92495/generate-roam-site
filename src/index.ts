@@ -1,9 +1,9 @@
-import puppeteer from "puppeteer";
 import path from "path";
 import watch from "node-watch";
 import fs from "fs";
 import jszip from "jszip";
 import marked from "roam-marked";
+import chromium from "chrome-aws-lambda";
 
 const CONFIG_PAGE_NAME = "roam/js/public-garden";
 
@@ -331,17 +331,20 @@ export const run = async ({
   const { info, error } = logger;
   info(`Hello ${roamUsername}! Fetching from ${roamGraph}...`);
 
-  return puppeteer
-    .launch(
-      process.platform === "win32"
-        ? {
-            executablePath:
-              "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-          }
-        : {
-            executablePath: "/usr/bin/google-chrome-stable",
-          }
-    )
+  const chromiumPath = await chromium.executablePath;
+  const executablePath =
+    chromiumPath || process.platform === "win32"
+      ? "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
+      : "/usr/bin/google-chrome-stable";
+
+  return chromium.puppeteer
+    .launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: true,
+      ignoreHTTPSErrors: true,
+    })
     .then(async (browser) => {
       const page = await browser.newPage();
       try {
