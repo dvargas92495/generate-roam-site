@@ -495,7 +495,7 @@ export const run = async ({
         });
         return;
       } catch (e) {
-        await page.screenshot({ path: "error.png" });
+        await page.screenshot({ path: path.join(pathRoot, "error.png") });
         error("took screenshot");
         throw new Error(e);
       }
