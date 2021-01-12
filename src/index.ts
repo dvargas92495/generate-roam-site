@@ -332,10 +332,11 @@ export const run = async ({
   info(`Hello ${roamUsername}! Fetching from ${roamGraph}...`);
 
   const chromiumPath = await chromium.executablePath;
-  const executablePath =
-    chromiumPath || process.platform === "win32"
-      ? "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
-      : "/usr/bin/google-chrome-stable";
+  const executablePath = chromiumPath
+    ? chromiumPath
+    : process.platform === "win32"
+    ? "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
+    : "/usr/bin/google-chrome-stable";
 
   return chromium.puppeteer
     .launch({
