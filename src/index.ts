@@ -361,7 +361,7 @@ export const run = async ({
           downloadPath,
         });
 
-        await page.goto("https://roamresearch.com/#/signin", {
+        await page.goto("https://roamresearch.com/#/signin?disablejs=true", {
           waitUntil: "networkidle0",
         });
         await page.waitForSelector("input[name=email]", {
