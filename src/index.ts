@@ -319,6 +319,7 @@ export const run = async ({
   roamPassword,
   roamGraph,
   logger = { info: console.log, error: console.error },
+  pathRoot = process.cwd(),
 }: {
   roamUsername: string;
   roamPassword: string;
@@ -327,6 +328,7 @@ export const run = async ({
     info: (s: string) => void;
     error: (s: string) => void;
   };
+  pathRoot?: string;
 }): Promise<void> => {
   const { info, error } = logger;
   info(`Hello ${roamUsername}! Fetching from ${roamGraph}...`);
@@ -349,8 +351,8 @@ export const run = async ({
     .then(async (browser) => {
       const page = await browser.newPage();
       try {
-        const downloadPath = path.join(process.cwd(), "downloads");
-        const outputPath = path.join(process.cwd(), "out");
+        const downloadPath = path.join(pathRoot, "downloads");
+        const outputPath = path.join(pathRoot, "out");
         fs.mkdirSync(downloadPath, { recursive: true });
         fs.mkdirSync(outputPath, { recursive: true });
         const cdp = await page.target().createCDPSession();
