@@ -5,7 +5,8 @@ import jszip from "jszip";
 import marked from "roam-marked";
 import chromium from "chrome-aws-lambda";
 
-const CONFIG_PAGE_NAME = "roam/js/public-garden";
+const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
+const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
 
 type Config = {
   index: string;
@@ -41,7 +42,8 @@ const extractTag = (tag: string) =>
 
 export const defaultConfig = {
   index: "Website Index",
-  titleFilter: (title: string): boolean => title !== `${CONFIG_PAGE_NAME}.md`,
+  titleFilter: (title: string): boolean =>
+    !CONFIG_PAGE_NAMES.map((c) => `${c}.md`).includes(title),
   contentFilter: (): boolean => true,
   template: `<!doctype html>
 <html>
@@ -206,7 +208,7 @@ const prepareContent = ({
       }
       const bullet = l.substring(numSpaces);
       const text = bullet.startsWith("- ") ? bullet.substring(2) : bullet;
-      const isIgnore = extractTag(text.trim()) === `${CONFIG_PAGE_NAME}/ignore`;
+      const isIgnore = IGNORE_BLOCKS.includes(extractTag(text.trim()));
       if (isIgnore) {
         ignoreIndent = indent;
         return false;
@@ -405,7 +407,10 @@ export const run = async ({
         const data = await fs.readFileSync(zipPath);
         const zip = await jszip.loadAsync(data);
 
-        const configPage = zip.files[`${CONFIG_PAGE_NAME}.md`];
+        const configPage =
+          zip.files[
+            CONFIG_PAGE_NAMES.find((c) => !!zip.files[`${c}.md`]) || ""
+          ];
         const config = {
           ...defaultConfig,
           ...(await (configPage
@@ -455,7 +460,9 @@ export const run = async ({
                   );
                 }, pageName);
                 const titleMatch = content.match(
-                  "roam/js/public-garden/title::(.*)\n"
+                  `[${CONFIG_PAGE_NAMES.map((c) => `${c}/title`).join(
+                    "|"
+                  )}]::(.*)\n`
                 );
                 const headMatch = content.match(
                   new RegExp(
