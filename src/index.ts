@@ -8,10 +8,14 @@ import { RoamBlock, TreeNode, ViewType } from "roam-client";
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
 const TITLE_REGEX = new RegExp(
-  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace('/', '\\/')}/title`).join("|")})::(.*)`
+  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace("/", "\\/")}/title`).join(
+    "|"
+  )})::(.*)`
 );
 const HEAD_REGEX = new RegExp(
-  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace('/', '\\/')}}/head`).join("|")})::`
+  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace("/", "\\/")}}/head`).join(
+    "|"
+  )})::`
 );
 const HTML_REGEX = new RegExp("```html\n(.*)```", "s");
 
@@ -49,13 +53,6 @@ export const defaultConfig = {
 <head>
 <meta charset="utf-8"/>
 <title>$\{PAGE_NAME}</title>
-<style>
-.rm-highlight {
-  background-color: hsl(51, 98%, 81%);
-  margin: -2px;
-  padding: 2px;
-}
-</style>
 </head>
 <body>
 <div id="content">
@@ -70,6 +67,18 @@ $\{REFERENCES}
 </html>`,
   referenceTemplate: '<li><a href="${LINK}">${REFERENCE}</a></li>',
 };
+
+const DEFAULT_STYLE = `<style>
+.rm-highlight {
+  background-color: hsl(51, 98%, 81%);
+  margin: -2px;
+  padding: 2px;
+}
+.rm-bold {
+  font-weight: bold;
+}
+</style>
+`;
 
 const getTitleRuleFromNode = (n: TreeNode) => {
   const { text, children } = n;
@@ -274,7 +283,7 @@ export const renderHtmlFromPage = ({
     viewType: pageContent.viewType,
   });
   const hydratedHtml = config.template
-    .replace("</head>", `${head}</head>`)
+    .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
     .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
     .replace(
