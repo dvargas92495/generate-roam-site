@@ -22,6 +22,7 @@
     "jszip": "^3.5.0",
     "node-watch": "^0.7.1",
     "puppeteer-core": "^5.5.0",
+    "roam-client": "^1.31.1",
     "roam-marked": "^0.2.2"
   },
   "devDependencies": {

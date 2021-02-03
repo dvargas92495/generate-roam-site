@@ -1,33 +1,33 @@
 import path from "path";
-import watch from "node-watch";
 import fs from "fs";
-import jszip from "jszip";
-import marked from "roam-marked";
 import chromium from "chrome-aws-lambda";
+import marked from "roam-marked";
+import { Page } from "puppeteer";
+import { RoamBlock, TreeNode, ViewType } from "roam-client";
 
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
+const TITLE_REGEX = new RegExp(
+  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace('/', '\\/')}/title`).join("|")})::(.*)`
+);
+const HEAD_REGEX = new RegExp(
+  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace('/', '\\/')}}/head`).join("|")})::`
+);
+const HTML_REGEX = new RegExp("```html\n(.*)```", "s");
 
 type Config = {
   index: string;
   titleFilter: (title: string) => boolean;
-  contentFilter: (content: string) => boolean;
+  contentFilter: (content: TreeNode[]) => boolean;
   template: string;
   referenceTemplate: string;
 };
 
-type RoamBlock = {
-  title?: string;
-  time?: number;
-  id?: number;
-  uid?: string;
-};
-
 declare global {
   interface Window {
-    roamAlphaAPI: {
-      q: (query: string) => RoamBlock[][];
-    };
+    fixViewType: (t: { c: TreeNode; v: ViewType }) => TreeNode;
+    getTreeByBlockId: (id: number) => TreeNode;
+    getTreeByPageName: (name: string) => TreeNode[];
   }
 }
 
@@ -42,8 +42,7 @@ const extractTag = (tag: string) =>
 
 export const defaultConfig = {
   index: "Website Index",
-  titleFilter: (title: string): boolean =>
-    !CONFIG_PAGE_NAMES.map((c) => `${c}.md`).includes(title),
+  titleFilter: (title: string): boolean => !CONFIG_PAGE_NAMES.includes(title),
   contentFilter: (): boolean => true,
   template: `<!doctype html>
 <html>
@@ -72,12 +71,7 @@ $\{REFERENCES}
   referenceTemplate: '<li><a href="${LINK}">${REFERENCE}</a></li>',
 };
 
-type Node = {
-  text: string;
-  children: Node[];
-};
-
-const getTitleRuleFromNode = (n: Node) => {
+const getTitleRuleFromNode = (n: TreeNode) => {
   const { text, children } = n;
   if (text.trim().toUpperCase() === "STARTS WITH" && children.length) {
     return (title: string) => title.startsWith(extractTag(children[0].text));
@@ -86,51 +80,47 @@ const getTitleRuleFromNode = (n: Node) => {
   }
 };
 
-const getContentRuleFromNode = (n: Node) => {
-  const { text, children } = n;
+const getContentRuleFromNode = (n: TreeNode) => {
+  const { text = "", children = [] } = n;
   if (text.trim().toUpperCase() === "TAGGED WITH" && children.length) {
     const tag = extractTag(children[0].text);
-    return (content: string) =>
-      content.includes(`#${tag}`) ||
-      content.includes(`[[${tag}]]`) ||
-      content.includes(`${tag}::`);
+    const findTag = (content: TreeNode) =>
+      content.text.includes(`#${tag}`) ||
+      content.text.includes(`[[${tag}]]`) ||
+      content.text.includes(`${tag}::`) ||
+      content.children.some(findTag);
+    return (content: TreeNode[]) => content.some(findTag);
   } else {
     return () => true;
   }
 };
 
-const getParsedTree = (content: string) => {
-  const contentParts = content.split("\n");
-  const parsedTree: Node[] = [];
-  let currentNode = { children: parsedTree };
-  let currentIndent = 0;
-  for (const text of contentParts) {
-    const node = { text: text.substring(text.indexOf("- ") + 2), children: [] };
-    const indent = text.indexOf("- ") / 4;
-    if (indent < 0) {
-      const lastNode = currentNode.children[currentNode.children.length - 1];
-      lastNode.text = `${lastNode.text}\n${text}`;
-    } else if (indent === currentIndent) {
-      currentNode.children.push(node);
-    } else if (indent > currentIndent) {
-      currentNode = currentNode.children[currentNode.children.length - 1];
-      currentNode.children.push(node);
-      currentIndent = indent;
-    } else {
-      currentNode = { children: parsedTree };
-      for (let i = 1; i < indent; i++) {
-        currentNode = currentNode.children[currentNode.children.length - 1];
-      }
-      currentIndent = indent;
-      currentNode.children.push(node);
-    }
+const getParsedTree = async ({
+  page,
+  pageName,
+}: {
+  page: Page;
+  pageName: string;
+}) => {
+  try {
+    return await page.evaluate(
+      (pageName: string) => window.getTreeByPageName(pageName),
+      pageName
+    );
+  } catch (e) {
+    console.error(`Failed to get Tree for ${pageName}`);
+    throw new Error(e);
   }
-  return parsedTree;
 };
 
-const getConfigFromPage = async (page: jszip.JSZipObject) => {
-  const content = await page.async("text");
-  const parsedTree = getParsedTree(content);
+const getConfigFromPage = async ({
+  page,
+  configPage,
+}: {
+  page: Page;
+  configPage: string;
+}) => {
+  const parsedTree = await getParsedTree({ page, pageName: configPage });
 
   const getConfigNode = (key: string) =>
     parsedTree.find((n) => n.text.trim().toUpperCase() === key.toUpperCase());
@@ -138,9 +128,9 @@ const getConfigFromPage = async (page: jszip.JSZipObject) => {
   const filterNode = getConfigNode("filter");
   const templateNode = getConfigNode("template");
   const referenceTemplateNode = getConfigNode("reference template");
-  const getCode = (node?: Node) =>
+  const getCode = (node?: TreeNode) =>
     (node?.children || [])
-      .map((s) => s.text.match(new RegExp("```html\n(.*)```", "s")))
+      .map((s) => s.text.match(HTML_REGEX))
       .find((s) => !!s)?.[1];
   const template = getCode(templateNode);
   const referenceTemplate = getCode(referenceTemplateNode);
@@ -152,7 +142,7 @@ const getConfigFromPage = async (page: jszip.JSZipObject) => {
         titleFilter: (t: string) =>
           t === withIndex.index ||
           filterNode.children.map(getTitleRuleFromNode).some((r) => r(t)),
-        contentFilter: (c: string) =>
+        contentFilter: (c: TreeNode[]) =>
           filterNode.children.map(getContentRuleFromNode).some((r) => r(c)),
       }
     : {};
@@ -172,8 +162,6 @@ const getConfigFromPage = async (page: jszip.JSZipObject) => {
   };
 };
 
-const convertPageToName = (p: string) => p.replace(/\.md$/, "");
-
 const convertPageToHtml = ({ name, index }: { name: string; index: string }) =>
   name === index
     ? "index.html"
@@ -184,84 +172,75 @@ const prepareContent = ({
   pageNames,
   index,
 }: {
-  content: string;
+  content: TreeNode[];
   pageNames: string[];
   index: string;
 }) => {
-  let ignoreIndent = -1;
-  let codeBlockIndent = -1;
-  const pageViewedAsDocument = !content.startsWith("- ");
-  const filteredContent = content
-    .split("\n")
-    .filter((l) => {
-      const numSpaces = l.search(/\S/);
-      const indent = numSpaces / 4;
-      if (ignoreIndent >= 0 && (indent > ignoreIndent || codeBlockIndent > 0)) {
-        if (l.includes("```")) {
-          if (codeBlockIndent >= 0) {
-            codeBlockIndent = -1;
-          } else {
-            codeBlockIndent = indent;
-          }
-        }
-        return false;
-      }
-      const bullet = l.substring(numSpaces);
-      const text = bullet.startsWith("- ") ? bullet.substring(2) : bullet;
-      const isIgnore = IGNORE_BLOCKS.includes(extractTag(text.trim()));
-      if (isIgnore) {
-        ignoreIndent = indent;
-        return false;
-      }
-      ignoreIndent = -1;
-      return true;
-    })
-    .map((s, i) => {
-      if (s.trimStart().startsWith("- ")) {
-        const numSpaces = s.search(/\S/);
-        const normalizeS = pageViewedAsDocument ? s.substring(4) : s;
-        const text = s.substring(numSpaces + 2);
-        if (text.startsWith("```")) {
-          codeBlockIndent = numSpaces / 4;
-          return `${normalizeS.substring(
-            0,
-            normalizeS.length - text.length
-          )}\n`;
-        }
-        return normalizeS;
-      }
-      if (codeBlockIndent > -1) {
-        const indent = "".padStart((codeBlockIndent + 2) * 4, " ");
-        if (s.endsWith("```")) {
-          codeBlockIndent = -1;
-          return `${indent}${s.substring(0, s.length - 3)}`;
-        }
-        return `${indent}${s}`;
-      }
-      if (s.startsWith("```")) {
-        codeBlockIndent = 0;
-        return "";
-      }
-      return i > 0 ? `\n${s}` : s;
-    })
-    .join("\n");
+  const filterIgnore = (t: TreeNode) => {
+    if (IGNORE_BLOCKS.includes(extractTag(t.text.trim()))) {
+      return false;
+    }
+    t.children = t.children.filter(filterIgnore);
+    return true;
+  };
+  const filteredContent = content.filter(filterIgnore);
 
   const pageNameOrs = pageNames.join("|");
   const hashOrs = pageNames.filter((p) => !p.includes(" "));
-  return filteredContent
-    .replace(
-      new RegExp(`#?\\[\\[(${pageNameOrs})\\]\\]`, "g"),
-      (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
-    )
-    .replace(
-      new RegExp(`(${pageNameOrs})::`, "g"),
-      (_, name) => `**[${name}:](/${convertPageToHtml({ name, index })})**`
-    )
-    .replace(
-      new RegExp(`#(${hashOrs})`, "g"),
-      (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
-    )
-    .replace(new RegExp("#\\[\\[|\\[\\[|\\]\\]", "g"), "");
+  const convertLinks = (t: TreeNode) => {
+    t.text = t.text
+      .replace(
+        new RegExp(`#?\\[\\[(${pageNameOrs})\\]\\]`, "g"),
+        (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
+      )
+      .replace(
+        new RegExp(`(${pageNameOrs})::`, "g"),
+        (_, name) => `**[${name}:](/${convertPageToHtml({ name, index })})**`
+      )
+      .replace(
+        new RegExp(`#(${hashOrs})`, "g"),
+        (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
+      )
+      .replace(new RegExp("#\\[\\[|\\[\\[|\\]\\]", "g"), "");
+    t.children.forEach(convertLinks);
+    if (t.heading > 0) {
+      t.text = `${"".padStart(t.heading, "#")} ${t.text}`;
+    }
+  };
+  filteredContent.forEach(convertLinks);
+  return filteredContent;
+};
+
+const VIEW_CONTAINER = {
+  bullet: "ul",
+  document: "div",
+  numbered: "ol",
+};
+
+const VIEW_ITEM = {
+  bullet: "li",
+  document: "p",
+  numbered: "li",
+};
+
+const convertContentToHtml = ({
+  content,
+  viewType,
+}: {
+  content: TreeNode[];
+  viewType: ViewType;
+}): string => {
+  const items = content.map((t) => {
+    const inlineMarked = marked(t.text);
+    const children = convertContentToHtml({
+      content: t.children,
+      viewType: t.viewType,
+    });
+    return `<${VIEW_ITEM[viewType]}>${inlineMarked}\n${children}</${VIEW_ITEM[viewType]}>`;
+  });
+  return `<${VIEW_CONTAINER[viewType]}>${items.join("\n")}</${
+    VIEW_CONTAINER[viewType]
+  }>`;
 };
 
 export const renderHtmlFromPage = ({
@@ -273,23 +252,27 @@ export const renderHtmlFromPage = ({
 }: {
   outputPath: string;
   pageContent: {
-    content: string;
+    content: TreeNode[];
     references: string[];
     title: string;
     head: string;
+    viewType: ViewType;
   };
   p: string;
   config: Config;
   pageNames: string[];
 }): void => {
   const { content, references, title, head } = pageContent;
-  const preMarked = prepareContent({
+  const preparedContent = prepareContent({
     content,
     pageNames,
     index: config.index,
   });
   const pageNameSet = new Set(pageNames);
-  const markedContent = marked(preMarked);
+  const markedContent = convertContentToHtml({
+    content: preparedContent,
+    viewType: pageContent.viewType,
+  });
   const hydratedHtml = config.template
     .replace("</head>", `${head}</head>`)
     .replace(/\${PAGE_NAME}/g, title)
@@ -310,7 +293,7 @@ export const renderHtmlFromPage = ({
         .join("\n")
     );
   const htmlFileName = convertPageToHtml({
-    name: convertPageToName(p),
+    name: p,
     index: config.index,
   });
   fs.writeFileSync(path.join(outputPath, htmlFileName), hydratedHtml);
@@ -382,58 +365,92 @@ export const run = async ({
         await page.waitForSelector("span.bp3-icon-more", {
           timeout: 120000,
         });
-        await page.click(`span.bp3-icon-more`);
-        await page.waitForXPath("//div[text()='Export All']", {
-          timeout: 120000,
+        const allPageNames = await page.evaluate(() => {
+          return window.roamAlphaAPI
+            .q("[:find ?s :where [?e :node/title ?s]]")
+            .map((b) => b[0] as string);
         });
-        const [exporter] = await page.$x("//div[text()='Export All']");
-        await exporter.click();
-        await page.waitForSelector(".bp3-intent-primary");
-        await page.click(".bp3-intent-primary");
-        info(`exporting ${new Date().toLocaleTimeString()}`);
-        const zipPath = await new Promise<string>((res) => {
-          const watcher = watch(
-            downloadPath,
-            { filter: /\.zip$/ },
-            (eventType?: "update" | "remove", filename?: string) => {
-              if (eventType == "update" && filename) {
-                watcher.close();
-                res(filename);
-              }
+        await page.evaluate(() => {
+          window.getTreeByBlockId = (blockId: number): TreeNode => {
+            const block = window.roamAlphaAPI.pull(
+              "[:block/children, :block/string, :block/order, :block/uid, :block/heading, :block/open, :children/view-type]",
+              blockId
+            );
+            const children = block[":block/children"] || [];
+            return {
+              text: block[":block/string"] || "",
+              order: block[":block/order"] || 0,
+              uid: block[":block/uid"] || "",
+              children: children
+                .map((c) => window.getTreeByBlockId(c[":db/id"]))
+                .sort((a, b) => a.order - b.order),
+              heading: block[":block/heading"] || 0,
+              open: block[":block/open"] || true,
+              viewType: block[":children/view-type"]?.substring(1) as ViewType,
+            };
+          };
+          window.fixViewType = ({
+            c,
+            v,
+          }: {
+            c: TreeNode;
+            v: ViewType;
+          }): TreeNode => {
+            if (!c.viewType) {
+              c.viewType = v;
             }
-          );
+            c.children.forEach((cc) =>
+              window.fixViewType({ c: cc, v: c.viewType })
+            );
+            return c;
+          };
+          window.getTreeByPageName = (name: string): TreeNode[] => {
+            const result = window.roamAlphaAPI.q(
+              `[:find (pull ?e [:block/children :children/view-type]) :where [?e :node/title "${name.replace(
+                /"/g,
+                '\\"'
+              )}"]]`
+            );
+            if (!result.length) {
+              return [];
+            }
+            const block = result[0][0] as RoamBlock;
+            const children = block?.children || [];
+            const viewType = block?.["view-type"] || "bullet";
+            return children
+              .map((c) => window.getTreeByBlockId(c.id))
+              .sort((a, b) => a.order - b.order)
+              .map((c) => window.fixViewType({ c, v: viewType }));
+          };
         });
-        info(`done waiting ${new Date().toLocaleTimeString()}`);
-        const data = await fs.readFileSync(zipPath);
-        const zip = await jszip.loadAsync(data);
-
         const configPage =
-          zip.files[
-            CONFIG_PAGE_NAMES.find((c) => !!zip.files[`${c}.md`]) || ""
-          ];
+          allPageNames.find((c) => CONFIG_PAGE_NAMES.includes(c)) || "";
         const config = {
           ...defaultConfig,
           ...(await (configPage
-            ? getConfigFromPage(configPage)
+            ? getConfigFromPage({ configPage, page })
             : Promise.resolve({}))),
         } as Config;
 
         const pages: {
           [key: string]: {
-            content: string;
+            content: TreeNode[];
             references: string[];
             title: string;
             head: string;
+            viewType: ViewType;
           };
         } = {};
+        info(`quering data ${new Date().toLocaleTimeString()}`);
         await Promise.all(
-          Object.keys(zip.files)
-            .filter(config.titleFilter)
-            .map(async (k) => {
-              const content = await zip.files[k].async("text");
-              const pageName = convertPageToName(k);
-              if (pageName === config.index || config.contentFilter(content)) {
-                const references = await page.evaluate((pageName: string) => {
+          allPageNames.filter(config.titleFilter).map(async (pageName) => {
+            const content = await getParsedTree({ page, pageName });
+            if (pageName === config.index || config.contentFilter(content)) {
+              if (pageName === "Ryan Delk") {
+                console.log("contentFilter", config.contentFilter(content));
+              }
+              const references = await page
+                .evaluate((pageName: string) => {
                   const findParentBlock: (b: RoamBlock) => RoamBlock = (
                     b: RoamBlock
                   ) =>
@@ -458,54 +475,72 @@ export const run = async ({
                   return Array.from(
                     new Set(blocks.map((b) => b.title || "").filter((t) => !!t))
                   );
-                }, pageName);
-                const titleMatch = content.match(
-                  `[${CONFIG_PAGE_NAMES.map((c) => `${c}/title`).join(
-                    "|"
-                  )}]::(.*)\n`
-                );
-                const headMatch = content.match(
-                  new RegExp(
-                    /roam\/js\/public-garden\/head::\s*- ```html\n(.*)```/,
-                    "s"
-                  )
-                );
-                const title = titleMatch ? titleMatch[1].trim() : pageName;
-                const head = headMatch ? headMatch[1] : "";
-                pages[k] = { content, references, title, head };
-              }
-            })
+                }, pageName)
+                .catch((e) => {
+                  console.error("Failed to find references for page", pageName);
+                  throw new Error(e);
+                });
+              const viewType = await page
+                .evaluate(
+                  (pageName) =>
+                    (window.roamAlphaAPI.q(
+                      `[:find ?v :where [?e :children/view-type ?v] [?e :node/title "${pageName.replace(
+                        /"/g,
+                        '\\"'
+                      )}"]]`
+                    )?.[0]?.[0] as ViewType) || "bullet",
+                  pageName
+                )
+                .catch((e) => {
+                  console.error("Failed to fetch view type for page", pageName);
+                  throw new Error(e);
+                });
+              const titleMatch = content
+                .find((s) => TITLE_REGEX.test(s.text))
+                ?.text?.match?.(TITLE_REGEX);
+              const headMatch = content
+                .find((s) => HEAD_REGEX.test(s.text))
+                ?.children?.[0]?.text?.match?.(HTML_REGEX);
+              const title = titleMatch ? titleMatch[1].trim() : pageName;
+              const head = headMatch ? headMatch[1] : "";
+              console.log(TITLE_REGEX, titleMatch, title, pageName);
+              pages[pageName] = { content, references, title, head, viewType };
+            }
+          })
         );
         await page.close();
         await browser.close();
-        const pageNames = Object.keys(pages).map(convertPageToName);
-        info(`resolving ${pageNames.length} pages`);
-        info(`Here are some: ${pageNames.slice(0, 5)}`);
-        Object.keys(pages).map((p) => {
-          if (process.env.NODE_ENV === "test") {
-            try {
-              fs.writeFileSync(
-                path.join(outputPath, encodeURIComponent(p)),
-                pages[p].content
-              );
-            } catch {
-              console.warn("failed to output md for", p);
-            }
-          }
-          renderHtmlFromPage({
-            outputPath,
-            config,
-            pageContent: pages[p],
-            p,
-            pageNames,
-          });
-        });
-        return;
+        return { pages, outputPath, config };
       } catch (e) {
         await page.screenshot({ path: path.join(pathRoot, "error.png") });
         error("took screenshot");
         throw new Error(e);
       }
+    })
+    .then(({ pages, outputPath, config }) => {
+      const pageNames = Object.keys(pages);
+      info(`resolving ${pageNames.length} pages`);
+      info(`Here are some: ${pageNames.slice(0, 5)}`);
+      pageNames.map((p) => {
+        if (process.env.NODE_ENV === "test") {
+          try {
+            fs.writeFileSync(
+              path.join(outputPath, `${encodeURIComponent(p)}.json`),
+              JSON.stringify(pages[p].content, null, 4)
+            );
+          } catch {
+            console.warn("failed to output md for", p);
+          }
+        }
+        renderHtmlFromPage({
+          outputPath,
+          config,
+          pageContent: pages[p],
+          p,
+          pageNames,
+        });
+      });
+      return;
     })
     .catch((e) => {
       error(e.message);
