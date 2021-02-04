@@ -202,15 +202,27 @@ const prepareContent = ({
     t.text = t.text
       .replace(
         new RegExp(`#?\\[\\[(${pageNameOrs})\\]\\]`, "g"),
-        (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
+        (_, name) =>
+          `[${name}](/${convertPageToHtml({ name, index }).replace(
+            /^index\.html$/,
+            ""
+          )})`
       )
       .replace(
         new RegExp(`(${pageNameOrs})::`, "g"),
-        (_, name) => `**[${name}:](/${convertPageToHtml({ name, index })})**`
+        (_, name) =>
+          `**[${name}:](/${convertPageToHtml({ name, index }).replace(
+            /^index\.html$/,
+            ""
+          )})**`
       )
       .replace(
         new RegExp(`#(${hashOrs})`, "g"),
-        (_, name) => `[${name}](/${convertPageToHtml({ name, index })})`
+        (_, name) =>
+          `[${name}](/${convertPageToHtml({ name, index }).replace(
+            /^index\.html$/,
+            ""
+          )})`
       )
       .replace(new RegExp("#\\[\\[|\\[\\[|\\]\\]", "g"), "");
     t.children.forEach(convertLinks);
@@ -457,9 +469,6 @@ export const run = async ({
           allPageNames.filter(config.titleFilter).map(async (pageName) => {
             const content = await getParsedTree({ page, pageName });
             if (pageName === config.index || config.contentFilter(content)) {
-              if (pageName === "Ryan Delk") {
-                console.log("contentFilter", config.contentFilter(content));
-              }
               const references = await page
                 .evaluate((pageName: string) => {
                   const findParentBlock: (b: RoamBlock) => RoamBlock = (
@@ -514,7 +523,6 @@ export const run = async ({
                 ?.children?.[0]?.text?.match?.(HTML_REGEX);
               const title = titleMatch ? titleMatch[1].trim() : pageName;
               const head = headMatch ? headMatch[1] : "";
-              console.log(TITLE_REGEX, titleMatch, title, pageName);
               pages[pageName] = { content, references, title, head, viewType };
             }
           })
