@@ -174,7 +174,9 @@ const getConfigFromPage = async ({
 const convertPageToHtml = ({ name, index }: { name: string; index: string }) =>
   name === index
     ? "index.html"
-    : `${encodeURIComponent(name.replace(/ /g, "_"))}.html`;
+    : `${encodeURIComponent(
+        name.replace(/ /g, "_").replace(/[",?#:$;/@&=+]/g, "")
+      )}.html`;
 
 const prepareContent = ({
   content,
