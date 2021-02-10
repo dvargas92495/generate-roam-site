@@ -180,11 +180,9 @@ const convertPageToHtml = ({ name, index }: { name: string; index: string }) =>
 
 const prepareContent = ({
   content,
-  pageNames,
   index,
 }: {
   content: TreeNode[];
-  pageNames: string[];
   index: string;
 }) => {
   const filterIgnore = (t: TreeNode) => {
@@ -196,12 +194,10 @@ const prepareContent = ({
   };
   const filteredContent = content.filter(filterIgnore);
 
-  const pageNameOrs = pageNames.join("|");
-  const hashOrs = pageNames.filter((p) => !p.includes(" "));
   const convertLinks = (t: TreeNode) => {
     t.text = t.text
       .replace(
-        new RegExp(`#?\\[\\[(${pageNameOrs})\\]\\]`, "g"),
+        new RegExp(`#?\\[\\[([^\\]]*)\\]\\]`, "g"),
         (_, name) =>
           `[${name}](/${convertPageToHtml({ name, index }).replace(
             /^index\.html$/,
@@ -209,7 +205,7 @@ const prepareContent = ({
           )})`
       )
       .replace(
-        new RegExp(`(${pageNameOrs})::`, "g"),
+        new RegExp(`(.*)::`, "g"),
         (_, name) =>
           `**[${name}:](/${convertPageToHtml({ name, index }).replace(
             /^index\.html$/,
@@ -217,7 +213,7 @@ const prepareContent = ({
           )})**`
       )
       .replace(
-        new RegExp(`#(${hashOrs})`, "g"),
+        new RegExp(/#([0-9a-zA-Z\-_/\\]*)/, "g"),
         (_, name) =>
           `[${name}](/${convertPageToHtml({ name, index }).replace(
             /^index\.html$/,
@@ -288,7 +284,6 @@ export const renderHtmlFromPage = ({
   const { content, references, title, head } = pageContent;
   const preparedContent = prepareContent({
     content,
-    pageNames,
     index: config.index,
   });
   const pageNameSet = new Set(pageNames);
