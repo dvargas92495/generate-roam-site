@@ -19,7 +19,10 @@ const HEAD_REGEX = new RegExp(
 );
 const HTML_REGEX = new RegExp("```html\n(.*)```", "s");
 
-const allBlockMapper = (t: TreeNode): TreeNode[] => [t, ...t.children.flatMap(allBlockMapper)];
+const allBlockMapper = (t: TreeNode): TreeNode[] => [
+  t,
+  ...t.children.flatMap(allBlockMapper),
+];
 
 type Config = {
   index: string;
