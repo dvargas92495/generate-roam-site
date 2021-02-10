@@ -13,11 +13,13 @@ const TITLE_REGEX = new RegExp(
   )})::(.*)`
 );
 const HEAD_REGEX = new RegExp(
-  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace("/", "\\/")}}/head`).join(
+  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace("/", "\\/")}/head`).join(
     "|"
   )})::`
 );
 const HTML_REGEX = new RegExp("```html\n(.*)```", "s");
+
+const allBlockMapper = (t: TreeNode): TreeNode[] => [t, ...t.children.flatMap(allBlockMapper)];
 
 type Config = {
   index: string;
@@ -367,6 +369,8 @@ export const run = async ({
         await page.goto("https://roamresearch.com/#/signin?disablejs=true", {
           waitUntil: "networkidle0",
         });
+        // Roam's doing this weird refresh thing. let's just hardcode it
+        await page.waitForTimeout(5000);
         await page.waitForSelector("input[name=email]", {
           timeout: 120000,
         });
@@ -510,10 +514,11 @@ export const run = async ({
                   console.error("Failed to fetch view type for page", pageName);
                   throw new Error(e);
                 });
-              const titleMatch = content
+              const allBlocks = content.flatMap(allBlockMapper);
+              const titleMatch = allBlocks
                 .find((s) => TITLE_REGEX.test(s.text))
                 ?.text?.match?.(TITLE_REGEX);
-              const headMatch = content
+              const headMatch = allBlocks
                 .find((s) => HEAD_REGEX.test(s.text))
                 ?.children?.[0]?.text?.match?.(HTML_REGEX);
               const title = titleMatch ? titleMatch[1].trim() : pageName;
