@@ -82,6 +82,9 @@ const DEFAULT_STYLE = `<style>
 .rm-bold {
   font-weight: bold;
 }
+.document-bullet {
+  list-style: none;
+}
 </style>
 `;
 
@@ -241,30 +244,42 @@ const VIEW_CONTAINER = {
   numbered: "ol",
 };
 
-const VIEW_ITEM = {
-  bullet: "li",
-  document: "p",
-  numbered: "li",
-};
-
 const convertContentToHtml = ({
   content,
   viewType,
+  level,
+  debug = false,
 }: {
   content: TreeNode[];
   viewType: ViewType;
+  level: number;
+  debug?: boolean;
 }): string => {
+  if (content.length === 0) {
+    return "";
+  }
   const items = content.map((t) => {
     const inlineMarked = marked(t.text);
+    if (debug) {
+      console.log("converted", t.text, "to", inlineMarked);
+    }
     const children = convertContentToHtml({
       content: t.children,
       viewType: t.viewType,
+      level: level + 1,
+      debug,
     });
-    return `<${VIEW_ITEM[viewType]}>${inlineMarked}\n${children}</${VIEW_ITEM[viewType]}>`;
+    const innerHtml = `${inlineMarked}\n${children}`;
+    if (level === 0 && viewType === "document") {
+      return innerHtml;
+    }
+    const attrs =
+      level > 0 && viewType === "document" ? ` class="document-bullet"` : "";
+    return `<li${attrs}>${innerHtml}</li$>`;
   });
-  return `<${VIEW_CONTAINER[viewType]}>${items.join("\n")}</${
-    VIEW_CONTAINER[viewType]
-  }>`;
+  const containerTag =
+    level > 0 && viewType === "document" ? "ul" : VIEW_CONTAINER[viewType];
+  return `<${containerTag}>${items.join("\n")}</${containerTag}>`;
 };
 
 export const renderHtmlFromPage = ({
@@ -295,7 +310,11 @@ export const renderHtmlFromPage = ({
   const markedContent = convertContentToHtml({
     content: preparedContent,
     viewType: pageContent.viewType,
+    level: 0,
   });
+  if (p === config.index) {
+    console.log(markedContent);
+  }
   const hydratedHtml = config.template
     .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
     .replace(/\${PAGE_NAME}/g, title)
