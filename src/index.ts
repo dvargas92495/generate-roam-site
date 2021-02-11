@@ -51,7 +51,7 @@ const extractTag = (tag: string) =>
 
 export const defaultConfig = {
   index: "Website Index",
-  titleFilter: (title: string): boolean => !CONFIG_PAGE_NAMES.includes(title),
+  titleFilter: (): boolean => true,
   contentFilter: (): boolean => true,
   template: `<!doctype html>
 <html>
@@ -92,9 +92,8 @@ const getTitleRuleFromNode = (n: TreeNode) => {
   const { text, children } = n;
   if (text.trim().toUpperCase() === "STARTS WITH" && children.length) {
     return (title: string) => title.startsWith(extractTag(children[0].text));
-  } else {
-    return defaultConfig.titleFilter;
   }
+  return undefined;
 };
 
 const getContentRuleFromNode = (n: TreeNode) => {
@@ -107,9 +106,8 @@ const getContentRuleFromNode = (n: TreeNode) => {
       content.text.includes(`${tag}::`) ||
       content.children.some(findTag);
     return (content: TreeNode[]) => content.some(findTag);
-  } else {
-    return () => true;
   }
+  return undefined;
 };
 
 const getParsedTree = async ({
@@ -154,13 +152,22 @@ const getConfigFromPage = async ({
   const withIndex: Partial<Config> = indexNode?.children?.length
     ? { index: extractTag(indexNode.children[0].text.trim()) }
     : {};
-  const withFilter: Partial<Config> = filterNode?.children?.length
+
+  const filterChildren = filterNode?.children || [];
+  const titleFilters = filterChildren
+    .map(getTitleRuleFromNode)
+    .filter((f) => !!f);
+  const contentFilters = filterChildren
+    .map(getContentRuleFromNode)
+    .filter((f) => !!f);
+  const withTitleFilter: Partial<Config> = titleFilters.length
     ? {
-        titleFilter: (t: string) =>
-          t === withIndex.index ||
-          filterNode.children.map(getTitleRuleFromNode).some((r) => r(t)),
-        contentFilter: (c: TreeNode[]) =>
-          filterNode.children.map(getContentRuleFromNode).some((r) => r(c)),
+        titleFilter: (t: string) => titleFilters.some((r) => r && r(t)),
+      }
+    : {};
+  const withContentFilter: Partial<Config> = contentFilters.length
+    ? {
+        contentFilter: (c: TreeNode[]) => contentFilters.some((r) => r && r(c)),
       }
     : {};
   const withTemplate: Partial<Config> = template
@@ -173,7 +180,8 @@ const getConfigFromPage = async ({
     : {};
   return {
     ...withIndex,
-    ...withFilter,
+    ...withTitleFilter,
+    ...withContentFilter,
     ...withTemplate,
     ...withReferenceTemplate,
   };
@@ -248,26 +256,20 @@ const convertContentToHtml = ({
   content,
   viewType,
   level,
-  debug = false,
 }: {
   content: TreeNode[];
   viewType: ViewType;
   level: number;
-  debug?: boolean;
 }): string => {
   if (content.length === 0) {
     return "";
   }
   const items = content.map((t) => {
     const inlineMarked = marked(t.text);
-    if (debug) {
-      console.log("converted", t.text, "to", inlineMarked);
-    }
     const children = convertContentToHtml({
       content: t.children,
       viewType: t.viewType,
       level: level + 1,
-      debug,
     });
     const innerHtml = `${inlineMarked}\n${children}`;
     if (level === 0 && viewType === "document") {
@@ -312,9 +314,6 @@ export const renderHtmlFromPage = ({
     viewType: pageContent.viewType,
     level: 0,
   });
-  if (p === config.index) {
-    console.log(markedContent);
-  }
   const hydratedHtml = config.template
     .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
     .replace(/\${PAGE_NAME}/g, title)
@@ -378,15 +377,8 @@ export const run = async ({
     .then(async (browser) => {
       const page = await browser.newPage();
       try {
-        const downloadPath = path.join(pathRoot, "downloads");
         const outputPath = path.join(pathRoot, "out");
-        fs.mkdirSync(downloadPath, { recursive: true });
         fs.mkdirSync(outputPath, { recursive: true });
-        const cdp = await page.target().createCDPSession();
-        cdp.send("Page.setDownloadBehavior", {
-          behavior: "allow",
-          downloadPath,
-        });
 
         await page.goto("https://roamresearch.com/#/signin?disablejs=true", {
           waitUntil: "networkidle0",
@@ -469,29 +461,44 @@ export const run = async ({
         });
         const configPage =
           allPageNames.find((c) => CONFIG_PAGE_NAMES.includes(c)) || "";
+        const userConfig = await (configPage
+          ? getConfigFromPage({ configPage, page })
+          : Promise.resolve({} as Partial<Config>));
+        const noFilterConfig =
+          !userConfig.titleFilter && !userConfig.contentFilter
+            ? { titleFilter: () => false }
+            : {};
+
         const config = {
           ...defaultConfig,
-          ...(await (configPage
-            ? getConfigFromPage({ configPage, page })
-            : Promise.resolve({}))),
+          ...userConfig,
+          ...noFilterConfig,
         } as Config;
 
-        const pages: {
-          [key: string]: {
-            content: TreeNode[];
-            references: string[];
-            title: string;
-            head: string;
-            viewType: ViewType;
-          };
-        } = {};
         info(`quering data ${new Date().toLocaleTimeString()}`);
-        await Promise.all(
-          allPageNames.filter(config.titleFilter).map(async (pageName) => {
-            const content = await getParsedTree({ page, pageName });
-            if (pageName === config.index || config.contentFilter(content)) {
-              const references = await page
-                .evaluate((pageName: string) => {
+        const pageNamesWithContent = await Promise.all(
+          allPageNames
+            .filter(
+              (pageName) =>
+                pageName === config.index || config.titleFilter(pageName)
+            )
+            .filter((pageName) => !CONFIG_PAGE_NAMES.includes(pageName))
+            .map((pageName) =>
+              getParsedTree({ page, pageName }).then((content) => ({
+                pageName,
+                content,
+              }))
+            )
+        );
+        const entries = await Promise.all(
+          pageNamesWithContent
+            .filter(
+              ({ pageName, content }) =>
+                pageName === config.index || config.contentFilter(content)
+            )
+            .map(({ pageName, content }) =>
+              Promise.all([
+                page.evaluate((pageName: string) => {
                   const findParentBlock: (b: RoamBlock) => RoamBlock = (
                     b: RoamBlock
                   ) =>
@@ -516,13 +523,8 @@ export const run = async ({
                   return Array.from(
                     new Set(blocks.map((b) => b.title || "").filter((t) => !!t))
                   );
-                }, pageName)
-                .catch((e) => {
-                  console.error("Failed to find references for page", pageName);
-                  throw new Error(e);
-                });
-              const viewType = await page
-                .evaluate(
+                }, pageName),
+                page.evaluate(
                   (pageName) =>
                     (window.roamAlphaAPI.q(
                       `[:find ?v :where [?e :children/view-type ?v] [?e :node/title "${pageName.replace(
@@ -531,22 +533,41 @@ export const run = async ({
                       )}"]]`
                     )?.[0]?.[0] as ViewType) || "bullet",
                   pageName
-                )
+                ),
+              ])
+                .then(([references, viewType]) => ({
+                  references,
+                  pageName,
+                  content,
+                  viewType,
+                }))
                 .catch((e) => {
-                  console.error("Failed to fetch view type for page", pageName);
+                  console.error("Failed to find references for page", pageName);
                   throw new Error(e);
-                });
-              const allBlocks = content.flatMap(allBlockMapper);
-              const titleMatch = allBlocks
-                .find((s) => TITLE_REGEX.test(s.text))
-                ?.text?.match?.(TITLE_REGEX);
-              const headMatch = allBlocks
-                .find((s) => HEAD_REGEX.test(s.text))
-                ?.children?.[0]?.text?.match?.(HTML_REGEX);
-              const title = titleMatch ? titleMatch[1].trim() : pageName;
-              const head = headMatch ? headMatch[1] : "";
-              pages[pageName] = { content, references, title, head, viewType };
-            }
+                })
+            )
+        );
+        const pages = Object.fromEntries(
+          entries.map(({ content, pageName, references, viewType }) => {
+            const allBlocks = content.flatMap(allBlockMapper);
+            const titleMatch = allBlocks
+              .find((s) => TITLE_REGEX.test(s.text))
+              ?.text?.match?.(TITLE_REGEX);
+            const headMatch = allBlocks
+              .find((s) => HEAD_REGEX.test(s.text))
+              ?.children?.[0]?.text?.match?.(HTML_REGEX);
+            const title = titleMatch ? titleMatch[1].trim() : pageName;
+            const head = headMatch ? headMatch[1] : "";
+            return [
+              pageName,
+              {
+                content,
+                references,
+                title,
+                head,
+                viewType,
+              },
+            ];
           })
         );
         await page.close();
