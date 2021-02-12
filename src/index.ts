@@ -5,6 +5,11 @@ import marked from "roam-marked";
 import { Page } from "puppeteer";
 import { RoamBlock, TreeNode, ViewType } from "roam-client";
 
+type TextNode = {
+  text: string;
+  children: TextNode[]
+}
+
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
 const TITLE_REGEX = new RegExp(
@@ -23,6 +28,11 @@ const allBlockMapper = (t: TreeNode): TreeNode[] => [
   t,
   ...t.children.flatMap(allBlockMapper),
 ];
+
+const toTextMapper = (t: TreeNode): TextNode => ({
+  text: t.text,
+  children: t.children.map(toTextMapper),
+})
 
 type Config = {
   index: string;
@@ -128,15 +138,7 @@ const getParsedTree = async ({
   }
 };
 
-const getConfigFromPage = async ({
-  page,
-  configPage,
-}: {
-  page: Page;
-  configPage: string;
-}) => {
-  const parsedTree = await getParsedTree({ page, pageName: configPage });
-
+const getConfigFromPage = (parsedTree: TreeNode[]) => {
   const getConfigNode = (key: string) =>
     parsedTree.find((n) => n.text.trim().toUpperCase() === key.toUpperCase());
   const indexNode = getConfigNode("index");
@@ -355,7 +357,7 @@ export const run = async ({
     error: (s: string) => void;
   };
   pathRoot?: string;
-}): Promise<void> => {
+}): Promise<TextNode[]> => {
   const { info, error } = logger;
   info(`Hello ${roamUsername}! Fetching from ${roamGraph}...`);
 
@@ -461,9 +463,8 @@ export const run = async ({
         });
         const configPage =
           allPageNames.find((c) => CONFIG_PAGE_NAMES.includes(c)) || "";
-        const userConfig = await (configPage
-          ? getConfigFromPage({ configPage, page })
-          : Promise.resolve({} as Partial<Config>));
+        const configPageTree = configPage ? await getParsedTree({ page, pageName: configPage }) : [];
+        const userConfig = getConfigFromPage(configPageTree);
         const noFilterConfig =
           !userConfig.titleFilter && !userConfig.contentFilter
             ? { titleFilter: () => false }
@@ -572,14 +573,14 @@ export const run = async ({
         );
         await page.close();
         await browser.close();
-        return { pages, outputPath, config };
+        return { pages, outputPath, config, configPageTree };
       } catch (e) {
         await page.screenshot({ path: path.join(pathRoot, "error.png") });
         error("took screenshot");
         throw new Error(e);
       }
     })
-    .then(({ pages, outputPath, config }) => {
+    .then(({ pages, outputPath, config, configPageTree }) => {
       const pageNames = Object.keys(pages);
       info(`resolving ${pageNames.length} pages`);
       info(`Here are some: ${pageNames.slice(0, 5)}`);
@@ -602,7 +603,7 @@ export const run = async ({
           pageNames,
         });
       });
-      return;
+      return configPageTree.map(toTextMapper);
     })
     .catch((e) => {
       error(e.message);
