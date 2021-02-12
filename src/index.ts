@@ -7,8 +7,8 @@ import { RoamBlock, TreeNode, ViewType } from "roam-client";
 
 type TextNode = {
   text: string;
-  children: TextNode[]
-}
+  children: TextNode[];
+};
 
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
@@ -32,7 +32,7 @@ const allBlockMapper = (t: TreeNode): TreeNode[] => [
 const toTextMapper = (t: TreeNode): TextNode => ({
   text: t.text,
   children: t.children.map(toTextMapper),
-})
+});
 
 type Config = {
   index: string;
@@ -463,7 +463,9 @@ export const run = async ({
         });
         const configPage =
           allPageNames.find((c) => CONFIG_PAGE_NAMES.includes(c)) || "";
-        const configPageTree = configPage ? await getParsedTree({ page, pageName: configPage }) : [];
+        const configPageTree = configPage
+          ? await getParsedTree({ page, pageName: configPage })
+          : [];
         const userConfig = getConfigFromPage(configPageTree);
         const noFilterConfig =
           !userConfig.titleFilter && !userConfig.contentFilter
