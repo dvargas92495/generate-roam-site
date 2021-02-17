@@ -5,11 +5,6 @@ import marked from "roam-marked";
 import { Page } from "puppeteer";
 import { RoamBlock, TreeNode, ViewType } from "roam-client";
 
-type TextNode = {
-  text: string;
-  children: TextNode[];
-};
-
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
 const TITLE_REGEX = new RegExp(
@@ -28,11 +23,6 @@ const allBlockMapper = (t: TreeNode): TreeNode[] => [
   t,
   ...t.children.flatMap(allBlockMapper),
 ];
-
-const toTextMapper = (t: TreeNode): TextNode => ({
-  text: t.text,
-  children: t.children.map(toTextMapper),
-});
 
 type Filter = { rule: string; values: string[] };
 
@@ -194,9 +184,11 @@ const convertPageToHtml = ({ name, index }: { name: string; index: string }) =>
 const prepareContent = ({
   content,
   index,
+  pageNameSet,
 }: {
   content: TreeNode[];
   index: string;
+  pageNameSet: Set<string>;
 }) => {
   const filterIgnore = (t: TreeNode) => {
     if (IGNORE_BLOCKS.includes(extractTag(t.text.trim()))) {
@@ -209,29 +201,29 @@ const prepareContent = ({
 
   const convertLinks = (t: TreeNode) => {
     t.text = t.text
-      .replace(
-        new RegExp(`#?\\[\\[([^\\]]*)\\]\\]`, "g"),
-        (_, name) =>
-          `[${name}](/${convertPageToHtml({ name, index }).replace(
-            /^index\.html$/,
-            ""
-          )})`
+      .replace(new RegExp(`#?\\[\\[([^\\]]*)\\]\\]`, "g"), (_, name) =>
+        pageNameSet.has(name)
+          ? `[${name}](/${convertPageToHtml({ name, index }).replace(
+              /^index\.html$/,
+              ""
+            )})`
+          : name
       )
-      .replace(
-        new RegExp(`(.*)::`, "g"),
-        (_, name) =>
-          `**[${name}:](/${convertPageToHtml({ name, index }).replace(
-            /^index\.html$/,
-            ""
-          )})**`
+      .replace(new RegExp(`(.*)::`, "g"), (_, name) =>
+        pageNameSet.has(name)
+          ? `**[${name}:](/${convertPageToHtml({ name, index }).replace(
+              /^index\.html$/,
+              ""
+            )})**`
+          : name
       )
-      .replace(
-        new RegExp(/#([0-9a-zA-Z\-_/\\]*)/, "g"),
-        (_, name) =>
-          `[${name}](/${convertPageToHtml({ name, index }).replace(
-            /^index\.html$/,
-            ""
-          )})`
+      .replace(new RegExp(/#([0-9a-zA-Z\-_/\\]*)/, "g"), (_, name) =>
+        pageNameSet.has(name)
+          ? `[${name}](/${convertPageToHtml({ name, index }).replace(
+              /^index\.html$/,
+              ""
+            )})`
+          : name
       )
       .replace(new RegExp("#\\[\\[|\\[\\[|\\]\\]", "g"), "");
     t.children.forEach(convertLinks);
@@ -301,11 +293,12 @@ export const renderHtmlFromPage = ({
   pageNames: string[];
 }): void => {
   const { content, references, title, head } = pageContent;
+  const pageNameSet = new Set(pageNames);
   const preparedContent = prepareContent({
     content,
     index: config.index,
+    pageNameSet,
   });
-  const pageNameSet = new Set(pageNames);
   const markedContent = convertContentToHtml({
     content: preparedContent,
     viewType: pageContent.viewType,
@@ -354,7 +347,7 @@ export const run = async ({
   };
   pathRoot?: string;
   inputConfig?: InputConfig;
-}): Promise<TextNode[]> => {
+}): Promise<InputConfig> => {
   const { info, error } = logger;
   info(`Hello ${roamUsername}! Fetching from ${roamGraph}...`);
 
@@ -583,14 +576,14 @@ export const run = async ({
         );
         await page.close();
         await browser.close();
-        return { pages, outputPath, config, configPageTree };
+        return { pages, outputPath, config, input };
       } catch (e) {
         await page.screenshot({ path: path.join(pathRoot, "error.png") });
         error("took screenshot");
         throw new Error(e);
       }
     })
-    .then(({ pages, outputPath, config, configPageTree }) => {
+    .then(({ pages, outputPath, config, input }) => {
       const pageNames = Object.keys(pages).sort();
       info(`resolving ${pageNames.length} pages`);
       info(`Here are some: ${pageNames.slice(0, 5)}`);
@@ -613,7 +606,7 @@ export const run = async ({
           pageNames,
         });
       });
-      return configPageTree.map(toTextMapper);
+      return input;
     })
     .catch((e) => {
       error(e.message);
