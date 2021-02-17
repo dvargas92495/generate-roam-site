@@ -9,6 +9,6 @@ test("Run Action", async (done) => {
     roamUsername: "dvargas92495@gmail.com",
     roamPassword: process.env.ROAM_PASSWORD || "",
   })
-    .then(done)
+    .then(() => done())
     .catch(({ message }) => fail(message));
 });

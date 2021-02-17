@@ -99,3 +99,13 @@ You could add anything to a page's head with the `roam/js/static-site/head::` at
 ![](./img/page-config.png)
 
 Note, that while you'll usually want to have these attributes nested within the ignore block, it's not a strict requirement.
+
+### Optional Arguments
+
+- `logger` - an object specifying which loggers to use for `info` and `error`. Defaulted to `console`
+- `pathRoot` - an absolute file path denoting where output paths should be relative to. Defaulted to `process.cwd()`.
+- `inputConfig` - A JSON to override any config options coming from Roam:
+    - `index` - `string`
+    - `filter` - `{rule: string, values: string[]}[]`
+    - `template` - `string`
+    - `referenceTemplate` - `string`

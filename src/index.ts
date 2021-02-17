@@ -34,6 +34,15 @@ const toTextMapper = (t: TreeNode): TextNode => ({
   children: t.children.map(toTextMapper),
 });
 
+type Filter = { rule: string; values: string[] };
+
+type InputConfig = {
+  index?: string;
+  filter?: Filter[];
+  template?: string;
+  referenceTemplate?: string;
+};
+
 type Config = {
   index: string;
   titleFilter: (title: string) => boolean;
@@ -61,8 +70,7 @@ const extractTag = (tag: string) =>
 
 export const defaultConfig = {
   index: "Website Index",
-  titleFilter: (): boolean => true,
-  contentFilter: (): boolean => true,
+  filter: [],
   template: `<!doctype html>
 <html>
 <head>
@@ -81,7 +89,7 @@ $\{REFERENCES}
 </body>
 </html>`,
   referenceTemplate: '<li><a href="${LINK}">${REFERENCE}</a></li>',
-};
+} as Required<InputConfig>;
 
 const DEFAULT_STYLE = `<style>
 .rm-highlight {
@@ -98,18 +106,16 @@ const DEFAULT_STYLE = `<style>
 </style>
 `;
 
-const getTitleRuleFromNode = (n: TreeNode) => {
-  const { text, children } = n;
+const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
   if (text.trim().toUpperCase() === "STARTS WITH" && children.length) {
-    return (title: string) => title.startsWith(extractTag(children[0].text));
+    return (title: string) => title.startsWith(extractTag(children[0]));
   }
   return undefined;
 };
 
-const getContentRuleFromNode = (n: TreeNode) => {
-  const { text = "", children = [] } = n;
+const getContentRuleFromNode = ({ rule: text, values: children }: Filter) => {
   if (text.trim().toUpperCase() === "TAGGED WITH" && children.length) {
-    const tag = extractTag(children[0].text);
+    const tag = extractTag(children[0]);
     const findTag = (content: TreeNode) =>
       content.text.includes(`#${tag}`) ||
       content.text.includes(`[[${tag}]]`) ||
@@ -151,39 +157,28 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
       .find((s) => !!s)?.[1];
   const template = getCode(templateNode);
   const referenceTemplate = getCode(referenceTemplateNode);
-  const withIndex: Partial<Config> = indexNode?.children?.length
+  const withIndex: InputConfig = indexNode?.children?.length
     ? { index: extractTag(indexNode.children[0].text.trim()) }
     : {};
-
-  const filterChildren = filterNode?.children || [];
-  const titleFilters = filterChildren
-    .map(getTitleRuleFromNode)
-    .filter((f) => !!f);
-  const contentFilters = filterChildren
-    .map(getContentRuleFromNode)
-    .filter((f) => !!f);
-  const withTitleFilter: Partial<Config> = titleFilters.length
+  const withFilter: InputConfig = filterNode?.children?.length
     ? {
-        titleFilter: (t: string) => titleFilters.some((r) => r && r(t)),
+        filter: filterNode.children.map((t) => ({
+          rule: t.text,
+          values: t.children.map((c) => c.text),
+        })),
       }
     : {};
-  const withContentFilter: Partial<Config> = contentFilters.length
-    ? {
-        contentFilter: (c: TreeNode[]) => contentFilters.some((r) => r && r(c)),
-      }
-    : {};
-  const withTemplate: Partial<Config> = template
+  const withTemplate: InputConfig = template
     ? {
         template,
       }
     : {};
-  const withReferenceTemplate: Partial<Config> = referenceTemplate
+  const withReferenceTemplate: InputConfig = referenceTemplate
     ? { referenceTemplate }
     : {};
   return {
     ...withIndex,
-    ...withTitleFilter,
-    ...withContentFilter,
+    ...withFilter,
     ...withTemplate,
     ...withReferenceTemplate,
   };
@@ -348,6 +343,7 @@ export const run = async ({
   roamGraph,
   logger = { info: console.log, error: console.error },
   pathRoot = process.cwd(),
+  inputConfig = {},
 }: {
   roamUsername: string;
   roamPassword: string;
@@ -357,6 +353,7 @@ export const run = async ({
     error: (s: string) => void;
   };
   pathRoot?: string;
+  inputConfig?: InputConfig;
 }): Promise<TextNode[]> => {
   const { info, error } = logger;
   info(`Hello ${roamUsername}! Fetching from ${roamGraph}...`);
@@ -467,15 +464,26 @@ export const run = async ({
           ? await getParsedTree({ page, pageName: configPage })
           : [];
         const userConfig = getConfigFromPage(configPageTree);
-        const noFilterConfig =
-          !userConfig.titleFilter && !userConfig.contentFilter
-            ? { titleFilter: () => false }
-            : {};
 
-        const config = {
+        const input = {
           ...defaultConfig,
           ...userConfig,
-          ...noFilterConfig,
+          ...inputConfig,
+        };
+
+        const titleFilters = input.filter.length
+          ? input.filter.map(getTitleRuleFromNode).filter((f) => !!f)
+          : [() => false];
+        const contentFilters = input.filter
+          .map(getContentRuleFromNode)
+          .filter((f) => !!f);
+
+        const config = {
+          ...input,
+          titleFilter: (t: string) =>
+            !titleFilters.length || titleFilters.some((r) => r && r(t)),
+          contentFilter: (c: TreeNode[]) =>
+            !contentFilters.length || contentFilters.some((r) => r && r(c)),
         } as Config;
 
         info(`quering data ${new Date().toLocaleTimeString()}`);
@@ -583,7 +591,7 @@ export const run = async ({
       }
     })
     .then(({ pages, outputPath, config, configPageTree }) => {
-      const pageNames = Object.keys(pages);
+      const pageNames = Object.keys(pages).sort();
       info(`resolving ${pageNames.length} pages`);
       info(`Here are some: ${pageNames.slice(0, 5)}`);
       pageNames.map((p) => {
