@@ -266,7 +266,7 @@ const convertContentToHtml = ({
     }
     const attrs =
       level > 0 && viewType === "document" ? ` class="document-bullet"` : "";
-    return `<li${attrs}>${innerHtml}</li$>`;
+    return `<li${attrs}>${innerHtml}</li>`;
   });
   const containerTag =
     level > 0 && viewType === "document" ? "ul" : VIEW_CONTAINER[viewType];
