@@ -434,10 +434,9 @@ export const run = async ({
           };
           window.getTreeByPageName = (name: string): TreeNode[] => {
             const result = window.roamAlphaAPI.q(
-              `[:find (pull ?e [:block/children :children/view-type]) :where [?e :node/title "${name.replace(
-                /"/g,
-                '\\"'
-              ).replace(/\\/, '\\\\')}"]]`
+              `[:find (pull ?e [:block/children :children/view-type]) :where [?e :node/title "${name
+                .replace(/"/g, '\\"')
+                .replace(/\\/, "\\\\")}"]]`
             );
             if (!result.length) {
               return [];
@@ -515,10 +514,9 @@ export const run = async ({
                         );
                   const parentBlocks = window.roamAlphaAPI
                     .q(
-                      `[:find (pull ?parentPage [*]) :where [?parentPage :block/children ?referencingBlock] [?referencingBlock :block/refs ?referencedPage] [?referencedPage :node/title "${pageName.replace(
-                        /"/g,
-                        '\\"'
-                      ).replace(/\\/, '\\\\')}"]]`
+                      `[:find (pull ?parentPage [*]) :where [?parentPage :block/children ?referencingBlock] [?referencingBlock :block/refs ?referencedPage] [?referencedPage :node/title "${pageName
+                        .replace(/"/g, '\\"')
+                        .replace(/\\/, "\\\\")}"]]`
                     )
                     .filter((block) => block.length);
                   const blocks = parentBlocks.map((b) =>
@@ -531,10 +529,9 @@ export const run = async ({
                 page.evaluate(
                   (pageName) =>
                     (window.roamAlphaAPI.q(
-                      `[:find ?v :where [?e :children/view-type ?v] [?e :node/title "${pageName.replace(
-                        /"/g,
-                        '\\"'
-                      ).replace(/\\/, '\\\\')}"]]`
+                      `[:find ?v :where [?e :children/view-type ?v] [?e :node/title "${pageName
+                        .replace(/"/g, '\\"')
+                        .replace(/\\/, "\\\\")}"]]`
                     )?.[0]?.[0] as ViewType) || "bullet",
                   pageName
                 ),
