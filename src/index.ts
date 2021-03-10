@@ -437,7 +437,7 @@ export const run = async ({
               `[:find (pull ?e [:block/children :children/view-type]) :where [?e :node/title "${name.replace(
                 /"/g,
                 '\\"'
-              )}"]]`
+              ).replace(/\\/, '\\\\')}"]]`
             );
             if (!result.length) {
               return [];
@@ -518,7 +518,7 @@ export const run = async ({
                       `[:find (pull ?parentPage [*]) :where [?parentPage :block/children ?referencingBlock] [?referencingBlock :block/refs ?referencedPage] [?referencedPage :node/title "${pageName.replace(
                         /"/g,
                         '\\"'
-                      )}"]]`
+                      ).replace(/\\/, '\\\\')}"]]`
                     )
                     .filter((block) => block.length);
                   const blocks = parentBlocks.map((b) =>
@@ -534,7 +534,7 @@ export const run = async ({
                       `[:find ?v :where [?e :children/view-type ?v] [?e :node/title "${pageName.replace(
                         /"/g,
                         '\\"'
-                      )}"]]`
+                      ).replace(/\\/, '\\\\')}"]]`
                     )?.[0]?.[0] as ViewType) || "bullet",
                   pageName
                 ),
