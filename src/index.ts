@@ -435,8 +435,8 @@ export const run = async ({
           window.getTreeByPageName = (name: string): TreeNode[] => {
             const result = window.roamAlphaAPI.q(
               `[:find (pull ?e [:block/children :children/view-type]) :where [?e :node/title "${name
-                .replace(/"/g, '\\"')
-                .replace(/\\/, "\\\\")}"]]`
+                .replace(/\\/, "\\\\")
+                .replace(/"/g, '\\"')}"]]`
             );
             if (!result.length) {
               return [];
@@ -515,8 +515,8 @@ export const run = async ({
                   const parentBlocks = window.roamAlphaAPI
                     .q(
                       `[:find (pull ?parentPage [*]) :where [?parentPage :block/children ?referencingBlock] [?referencingBlock :block/refs ?referencedPage] [?referencedPage :node/title "${pageName
-                        .replace(/"/g, '\\"')
-                        .replace(/\\/, "\\\\")}"]]`
+                        .replace(/\\/, "\\\\")
+                        .replace(/"/g, '\\"')}"]]`
                     )
                     .filter((block) => block.length);
                   const blocks = parentBlocks.map((b) =>
@@ -530,8 +530,8 @@ export const run = async ({
                   (pageName) =>
                     (window.roamAlphaAPI.q(
                       `[:find ?v :where [?e :children/view-type ?v] [?e :node/title "${pageName
-                        .replace(/"/g, '\\"')
-                        .replace(/\\/, "\\\\")}"]]`
+                        .replace(/\\/, "\\\\")
+                        .replace(/"/g, '\\"')}"]]`
                     )?.[0]?.[0] as ViewType) || "bullet",
                   pageName
                 ),
