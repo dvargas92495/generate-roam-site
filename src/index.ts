@@ -33,14 +33,6 @@ type InputConfig = {
   referenceTemplate?: string;
 };
 
-type Config = {
-  index: string;
-  titleFilter: (title: string) => boolean;
-  contentFilter: (content: TreeNode[]) => boolean;
-  template: string;
-  referenceTemplate: string;
-};
-
 declare global {
   interface Window {
     fixViewType: (t: { c: TreeNode; v: ViewType }) => TreeNode;
@@ -98,7 +90,10 @@ const DEFAULT_STYLE = `<style>
 
 const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
   if (text.trim().toUpperCase() === "STARTS WITH" && children.length) {
-    return (title: string) => title.startsWith(extractTag(children[0]));
+    const tag = extractTag(children[0]);
+    return (title: string) => {
+      return title.startsWith(tag);
+    };
   }
   return undefined;
 };
@@ -289,7 +284,7 @@ export const renderHtmlFromPage = ({
     viewType: ViewType;
   };
   p: string;
-  config: Config;
+  config: Required<InputConfig>;
   pageNames: string[];
 }): void => {
   const { content, references, title, head } = pageContent;
@@ -328,6 +323,51 @@ export const renderHtmlFromPage = ({
     index: config.index,
   });
   fs.writeFileSync(path.join(outputPath, htmlFileName), hydratedHtml);
+};
+
+export const processSiteData = ({
+  pages,
+  outputPath,
+  config,
+  info,
+}: {
+  info: (s: string) => void;
+  config: Required<InputConfig>;
+  outputPath: string;
+  pages: {
+    [k: string]: {
+      content: TreeNode[];
+      references: string[];
+      title: string;
+      head: string;
+      viewType: ViewType;
+    };
+  };
+}): InputConfig => {
+  info("lets sort");
+  const pageNames = Object.keys(pages).sort();
+  info(`resolving ${pageNames.length} pages`);
+  info(`Here are some: ${pageNames.slice(0, 5)}`);
+  pageNames.map((p) => {
+    if (process.env.NODE_ENV === "test") {
+      try {
+        fs.writeFileSync(
+          path.join(outputPath, `${encodeURIComponent(p)}.json`),
+          JSON.stringify(pages[p].content, null, 4)
+        );
+      } catch {
+        console.warn("failed to output md for", p);
+      }
+    }
+    renderHtmlFromPage({
+      outputPath,
+      config,
+      pageContent: pages[p],
+      p,
+      pageNames,
+    });
+  });
+  return config;
 };
 
 export const run = async ({
@@ -457,33 +497,29 @@ export const run = async ({
           : [];
         const userConfig = getConfigFromPage(configPageTree);
 
-        const input = {
+        const config = {
           ...defaultConfig,
           ...userConfig,
           ...inputConfig,
         };
 
-        const titleFilters = input.filter.length
-          ? input.filter.map(getTitleRuleFromNode).filter((f) => !!f)
+        const titleFilters = config.filter.length
+          ? config.filter.map(getTitleRuleFromNode).filter((f) => !!f)
           : [() => false];
-        const contentFilters = input.filter
+        const contentFilters = config.filter
           .map(getContentRuleFromNode)
           .filter((f) => !!f);
 
-        const config = {
-          ...input,
-          titleFilter: (t: string) =>
-            !titleFilters.length || titleFilters.some((r) => r && r(t)),
-          contentFilter: (c: TreeNode[]) =>
-            !contentFilters.length || contentFilters.some((r) => r && r(c)),
-        } as Config;
+        const titleFilter = (t: string) =>
+          !titleFilters.length || titleFilters.some((r) => r && r(t));
+        const contentFilter = (c: TreeNode[]) =>
+          !contentFilters.length || contentFilters.some((r) => r && r(c));
 
-        info(`quering data ${new Date().toLocaleTimeString()}`);
+        info(`querying data ${new Date().toLocaleTimeString()}`);
         const pageNamesWithContent = await Promise.all(
           allPageNames
             .filter(
-              (pageName) =>
-                pageName === config.index || config.titleFilter(pageName)
+              (pageName) => pageName === config.index || titleFilter(pageName)
             )
             .filter((pageName) => !CONFIG_PAGE_NAMES.includes(pageName))
             .map((pageName) =>
@@ -493,14 +529,19 @@ export const run = async ({
               }))
             )
         );
+        info(
+          `title filtered to ${JSON.stringify(
+            pageNamesWithContent.map(({ pageName }) => pageName)
+          )} pages`
+        );
         const entries = await Promise.all(
           pageNamesWithContent
             .filter(
               ({ pageName, content }) =>
-                pageName === config.index || config.contentFilter(content)
+                pageName === config.index || contentFilter(content)
             )
-            .map(({ pageName, content }) =>
-              Promise.all([
+            .map(({ pageName, content }) => {
+              return Promise.all([
                 page.evaluate((pageName: string) => {
                   const findParentBlock: (b: RoamBlock) => RoamBlock = (
                     b: RoamBlock
@@ -545,9 +586,10 @@ export const run = async ({
                 .catch((e) => {
                   console.error("Failed to find references for page", pageName);
                   throw new Error(e);
-                })
-            )
+                });
+            })
         );
+        info(`content filtered to ${entries.length} entries`);
         const pages = Object.fromEntries(
           entries.map(({ content, pageName, references, viewType }) => {
             const allBlocks = content.flatMap(allBlockMapper);
@@ -571,40 +613,19 @@ export const run = async ({
             ];
           })
         );
+        info("closing browser");
         await page.close();
-        await browser.close();
-        return { pages, outputPath, config, input };
+        info("closing browser");
+        browser.close();
+        info("returning data");
+        return { pages, outputPath, config };
       } catch (e) {
         await page.screenshot({ path: path.join(pathRoot, "error.png") });
         error("took screenshot");
         throw new Error(e);
       }
     })
-    .then(({ pages, outputPath, config, input }) => {
-      const pageNames = Object.keys(pages).sort();
-      info(`resolving ${pageNames.length} pages`);
-      info(`Here are some: ${pageNames.slice(0, 5)}`);
-      pageNames.map((p) => {
-        if (process.env.NODE_ENV === "test") {
-          try {
-            fs.writeFileSync(
-              path.join(outputPath, `${encodeURIComponent(p)}.json`),
-              JSON.stringify(pages[p].content, null, 4)
-            );
-          } catch {
-            console.warn("failed to output md for", p);
-          }
-        }
-        renderHtmlFromPage({
-          outputPath,
-          config,
-          pageContent: pages[p],
-          p,
-          pageNames,
-        });
-      });
-      return input;
-    })
+    .then((d) => processSiteData({ ...d, info }))
     .catch((e) => {
       error(e.message);
       throw new Error(e);
