@@ -195,32 +195,14 @@ const prepareContent = ({
   const filteredContent = content.filter(filterIgnore);
 
   const convertLinks = (t: TreeNode) => {
-    t.text = t.text
-      .replace(new RegExp(`#?\\[\\[([^\\]]*)\\]\\]`, "g"), (_, name) =>
-        pageNameSet.has(name)
-          ? `[${name}](/${convertPageToHtml({ name, index }).replace(
-              /^index\.html$/,
-              ""
-            )})`
-          : name
-      )
-      .replace(new RegExp(`(.*)::`, "g"), (_, name) =>
-        pageNameSet.has(name)
-          ? `**[${name}:](/${convertPageToHtml({ name, index }).replace(
-              /^index\.html$/,
-              ""
-            )})**`
-          : name
-      )
-      .replace(new RegExp(/#([0-9a-zA-Z\-_/\\]*)/, "g"), (_, name) =>
-        pageNameSet.has(name)
-          ? `[${name}](/${convertPageToHtml({ name, index }).replace(
-              /^index\.html$/,
-              ""
-            )})`
-          : name
-      )
-      .replace(new RegExp("#\\[\\[|\\[\\[|\\]\\]", "g"), "");
+    t.text = t.text.replace(new RegExp(`(.*)::`, "g"), (_, name) =>
+      pageNameSet.has(name)
+        ? `**[${name}:](/${convertPageToHtml({ name, index }).replace(
+            /^index\.html$/,
+            ""
+          )})**`
+        : name
+    );
     t.children.forEach(convertLinks);
     if (t.heading > 0) {
       t.text = `${"".padStart(t.heading, "#")} ${t.text}`;
@@ -240,20 +222,23 @@ const convertContentToHtml = ({
   content,
   viewType,
   level,
+  pagesToHrefs,
 }: {
   content: TreeNode[];
   viewType: ViewType;
   level: number;
+  pagesToHrefs: (s: string) => string;
 }): string => {
   if (content.length === 0) {
     return "";
   }
   const items = content.map((t) => {
-    const inlineMarked = marked(t.text);
+    const inlineMarked = marked(t.text, { pagesToHrefs });
     const children = convertContentToHtml({
       content: t.children,
       viewType: t.viewType,
       level: level + 1,
+      pagesToHrefs,
     });
     const innerHtml = `${inlineMarked}\n${children}`;
     if (level === 0 && viewType === "document") {
@@ -298,6 +283,13 @@ export const renderHtmlFromPage = ({
     content: preparedContent,
     viewType: pageContent.viewType,
     level: 0,
+    pagesToHrefs: (name) =>
+      pageNameSet.has(name)
+        ? `/${convertPageToHtml({ name, index: config.index }).replace(
+            /^index\.html$/,
+            ""
+          )})`
+        : "",
   });
   const hydratedHtml = config.template
     .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
