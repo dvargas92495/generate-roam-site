@@ -288,7 +288,7 @@ export const renderHtmlFromPage = ({
         ? `/${convertPageToHtml({ name, index: config.index }).replace(
             /^index\.html$/,
             ""
-          )})`
+          )}`
         : "",
   });
   const hydratedHtml = config.template
