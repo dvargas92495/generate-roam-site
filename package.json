@@ -21,7 +21,7 @@
     "copyfiles": "^2.4.1",
     "puppeteer-core": "^5.5.0",
     "roam-client": "^1.31.1",
-    "roam-marked": "^0.7.3"
+    "roam-marked": "^0.8.0"
   },
   "devDependencies": {
     "@types/jest": "^26.0.19",

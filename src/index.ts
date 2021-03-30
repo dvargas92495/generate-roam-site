@@ -3,7 +3,7 @@ import fs from "fs";
 import chromium from "chrome-aws-lambda";
 import marked from "roam-marked";
 import { Page } from "puppeteer";
-import { RoamBlock, TreeNode, ViewType } from "roam-client";
+import { parseRoamDate, RoamBlock, TreeNode, ViewType } from "roam-client";
 
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
@@ -18,6 +18,7 @@ const HEAD_REGEX = new RegExp(
   )})::`
 );
 const HTML_REGEX = new RegExp("```html\n(.*)```", "s");
+const DAILY_NOTE_PAGE_REGEX = /(January|February|March|April|May|June|July|August|September|October|November|December) [0-3]?[0-9](st|nd|rd|th), [0-9][0-9][0-9][0-9]/;
 
 const allBlockMapper = (t: TreeNode): TreeNode[] => [
   t,
@@ -169,7 +170,13 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
   };
 };
 
-const convertPageToHtml = ({ name, index }: { name: string; index: string }) =>
+const convertPageNameToPath = ({
+  name,
+  index,
+}: {
+  name: string;
+  index: string;
+}) =>
   name === index
     ? "index.html"
     : `${encodeURIComponent(
@@ -186,7 +193,7 @@ const prepareContent = ({
   pageNameSet: Set<string>;
 }) => {
   const filterIgnore = (t: TreeNode) => {
-    if (IGNORE_BLOCKS.includes(extractTag(t.text.trim()))) {
+    if (IGNORE_BLOCKS.some((ib) => t.text.trim().includes(ib))) {
       return false;
     }
     t.children = t.children.filter(filterIgnore);
@@ -197,7 +204,7 @@ const prepareContent = ({
   const convertLinks = (t: TreeNode) => {
     t.text = t.text.replace(new RegExp(`(.*)::`, "g"), (_, name) =>
       pageNameSet.has(name)
-        ? `**[${name}:](/${convertPageToHtml({ name, index }).replace(
+        ? `**[${name}:](/${convertPageNameToPath({ name, index }).replace(
             /^index\.html$/,
             ""
           )})**`
@@ -223,22 +230,25 @@ const convertContentToHtml = ({
   viewType,
   level,
   pagesToHrefs,
+  components,
 }: {
   content: TreeNode[];
   viewType: ViewType;
   level: number;
   pagesToHrefs: (s: string) => string;
+  components: (s: string) => string;
 }): string => {
   if (content.length === 0) {
     return "";
   }
   const items = content.map((t) => {
-    const inlineMarked = marked(t.text, { pagesToHrefs });
+    const inlineMarked = marked(t.text, { pagesToHrefs, components });
     const children = convertContentToHtml({
       content: t.children,
       viewType: t.viewType,
       level: level + 1,
       pagesToHrefs,
+      components,
     });
     const innerHtml = `${inlineMarked}\n${children}`;
     if (level === 0 && viewType === "document") {
@@ -263,7 +273,7 @@ export const renderHtmlFromPage = ({
   outputPath: string;
   pageContent: {
     content: TreeNode[];
-    references: string[];
+    references: { title: string; node: TreeNode }[];
     title: string;
     head: string;
     viewType: ViewType;
@@ -279,17 +289,48 @@ export const renderHtmlFromPage = ({
     index: config.index,
     pageNameSet,
   });
+  const pagesToHrefs = (name: string) =>
+    pageNameSet.has(name)
+      ? `/${convertPageNameToPath({ name, index: config.index }).replace(
+          /^index\.html$/,
+          ""
+        )}`
+      : "";
   const markedContent = convertContentToHtml({
     content: preparedContent,
     viewType: pageContent.viewType,
     level: 0,
-    pagesToHrefs: (name) =>
-      pageNameSet.has(name)
-        ? `/${convertPageToHtml({ name, index: config.index }).replace(
-            /^index\.html$/,
-            ""
-          )}`
-        : "",
+    pagesToHrefs,
+    components: (s) => {
+      const staticSiteComponent = /static site:(.*)/i.exec(s)?.[1];
+      if (staticSiteComponent) {
+        if (/daily log/i.test(staticSiteComponent)) {
+          const referenceContent = references
+            .filter(({ title }) => DAILY_NOTE_PAGE_REGEX.test(title))
+            .sort(
+              ({ title: a }, { title: b }) =>
+                parseRoamDate(b).valueOf() - parseRoamDate(a).valueOf()
+            )
+            .map(({ node, title }) => ({
+              ...node,
+              text: node.text.replace(p, title),
+            }));
+          const preparedReferenceContent = prepareContent({
+            content: referenceContent,
+            index: config.index,
+            pageNameSet,
+          });
+          return `Daily Log:${convertContentToHtml({
+            content: preparedReferenceContent,
+            viewType: pageContent.viewType,
+            level: 0,
+            pagesToHrefs,
+            components: () => "",
+          })}`;
+        }
+      }
+      return "";
+    },
   });
   const hydratedHtml = config.template
     .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
@@ -298,19 +339,19 @@ export const renderHtmlFromPage = ({
     .replace(
       /\${REFERENCES}/g,
       references
-        .filter((r) => pageNameSet.has(r))
+        .filter((r) => pageNameSet.has(r.title))
         .map((r) =>
-          config.referenceTemplate.replace(/\${REFERENCE}/g, r).replace(
+          config.referenceTemplate.replace(/\${REFERENCE}/g, r.title).replace(
             /\${LINK}/g,
-            convertPageToHtml({
-              name: r,
+            convertPageNameToPath({
+              name: r.title,
               index: config.index,
             })
           )
         )
         .join("\n")
     );
-  const htmlFileName = convertPageToHtml({
+  const htmlFileName = convertPageNameToPath({
     name: p,
     index: config.index,
   });
@@ -329,7 +370,7 @@ export const processSiteData = ({
   pages: {
     [k: string]: {
       content: TreeNode[];
-      references: string[];
+      references: { title: string; node: TreeNode }[];
       title: string;
       head: string;
       viewType: ViewType;
@@ -521,11 +562,7 @@ export const run = async ({
               }))
             )
         );
-        info(
-          `title filtered to ${JSON.stringify(
-            pageNamesWithContent.map(({ pageName }) => pageName)
-          )} pages`
-        );
+        info(`title filtered to ${pageNamesWithContent.length} pages`);
         const entries = await Promise.all(
           pageNamesWithContent
             .filter(
@@ -534,31 +571,23 @@ export const run = async ({
             )
             .map(({ pageName, content }) => {
               return Promise.all([
-                page.evaluate((pageName: string) => {
-                  const findParentBlock: (b: RoamBlock) => RoamBlock = (
-                    b: RoamBlock
-                  ) =>
-                    b.title
-                      ? b
-                      : findParentBlock(
-                          window.roamAlphaAPI.q(
-                            `[:find (pull ?e [*]) :where [?e :block/children ${b.id}]]`
-                          )[0][0] as RoamBlock
-                        );
-                  const parentBlocks = window.roamAlphaAPI
-                    .q(
-                      `[:find (pull ?parentPage [*]) :where [?parentPage :block/children ?referencingBlock] [?referencingBlock :block/refs ?referencedPage] [?referencedPage :node/title "${pageName
-                        .replace(/\\/, "\\\\")
-                        .replace(/"/g, '\\"')}"]]`
-                    )
-                    .filter((block) => block.length);
-                  const blocks = parentBlocks.map((b) =>
-                    findParentBlock(b[0])
-                  ) as RoamBlock[];
-                  return Array.from(
-                    new Set(blocks.map((b) => b.title || "").filter((t) => !!t))
-                  );
-                }, pageName),
+                page.evaluate(
+                  (pageName: string) =>
+                    window.roamAlphaAPI
+                      .q(
+                        `[:find ?rt ?r :where [?pr :node/title ?rt] [?r :block/page ?pr] [?r :block/refs ?p] [?p :node/title "${pageName
+                          .replace(/\\/, "\\\\")
+                          .replace(/"/g, '\\"')}"]]`
+                      )
+                      .map(([title, id]) => ({
+                        title,
+                        node: window.fixViewType({
+                          c: window.getTreeByBlockId(id),
+                          v: "bullet",
+                        }),
+                      })),
+                  pageName
+                ),
                 page.evaluate(
                   (pageName) =>
                     (window.roamAlphaAPI.q(
