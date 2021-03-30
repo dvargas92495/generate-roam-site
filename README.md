@@ -100,6 +100,20 @@ You could add anything to a page's head with the `roam/js/static-site/head::` at
 
 Note, that while you'll usually want to have these attributes nested within the ignore block, it's not a strict requirement.
 
+### Custom Components
+There are many Roam UI elements that render using `{{}}`. This package includes its own custom UI components on top of the Roam native ones. (Note: not _all_ Roam native components are supported yet.)
+
+#### Daily Log
+On any page, create a `{{static-site:daily log}}` button. The button will be replaced with the blocks where the page is referenced in daily notes. This is an example output:
+
+- Daily Log:
+  - March 29th, 2021
+    - Just child blocks
+  - March 26th, 2021 Inline
+    - And a child block
+
+If there's a block on a daily note page referencing the original page that you would like to be excluded, simply add a `#[[roam/js/static-site/ignore]]` tag to the block.
+
 ### Optional Arguments
 
 - `logger` - an object specifying which loggers to use for `info` and `error`. Defaulted to `console`
