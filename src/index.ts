@@ -4,6 +4,9 @@ import chromium from "chrome-aws-lambda";
 import marked from "roam-marked";
 import { Page } from "puppeteer";
 import { parseRoamDate, RoamBlock, TreeNode, ViewType } from "roam-client";
+import React from "react";
+import ReactDOMServer from "react-dom/server";
+import DailyLog from "./DailyLog";
 
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
@@ -60,7 +63,7 @@ export const defaultConfig = {
 <meta charset="utf-8"/>
 <title>$\{PAGE_NAME}</title>
 </head>
-<body>
+<body onload="bodyOnLoad();">
 <div id="content">
 $\{PAGE_CONTENT}
 </div>
@@ -88,6 +91,50 @@ const DEFAULT_STYLE = `<style>
 }
 </style>
 `;
+
+const DEFAULT_SCRIPT = `<script src="https://unpkg.com/react@17/umd/react.${
+  process.env.NODE_ENV === "production" ? "production.min" : "development"
+}.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@17/umd/react-dom.${
+  process.env.NODE_ENV === "production" ? "production.min" : "development"
+}.js" crossorigin></script>
+<script>
+${fs
+  .readFileSync(path.join(__dirname, "DailyLog.ts"))
+  .toString()
+  .split("\n")
+  .slice(2, -2)
+  .join("\n")
+  .replace(": React.ReactElemnt", "")}
+const componentsToHydrate = [];
+const bodyOnLoad = () => {
+  componentsToHydrate.forEach(
+    ({Component, id, props}) => 
+      ReactDOM.hydrate(
+        React.createElement(Component, props), 
+        document.getElementById(id)
+      )
+  );
+};
+</script>`;
+
+const renderComponent = ({
+  Component,
+  id,
+  props = {},
+}: {
+  Component: React.FC;
+  id: string;
+  props?: Record<string, unknown>;
+}) => {
+  return `<script>componentsToHydrate.push({
+    Component: ${Component.name},
+    id: "${id}",
+    props: ${JSON.stringify(props)}
+  })</script>${ReactDOMServer.renderToString(
+    React.createElement("div", { id }, React.createElement(Component, props))
+  )}`;
+};
 
 const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
   if (text.trim().toUpperCase() === "STARTS WITH" && children.length) {
@@ -320,12 +367,58 @@ export const renderHtmlFromPage = ({
             index: config.index,
             pageNameSet,
           });
-          return `Daily Log:${convertContentToHtml({
-            content: preparedReferenceContent,
-            viewType: pageContent.viewType,
-            level: 0,
-            pagesToHrefs,
-            components: () => "",
+          const firstNode = preparedReferenceContent[0];
+          const firstDate = parseRoamDate(
+            firstNode?.text?.match?.(DAILY_NOTE_PAGE_REGEX)?.[0] || ""
+          );
+          const allContent = preparedReferenceContent.slice(1).reduce(
+            (prev, cur) => {
+              const lastNode = prev[prev.length - 1];
+              const curDate = parseRoamDate(
+                cur.text.match(DAILY_NOTE_PAGE_REGEX)?.[0] || ""
+              );
+              if (
+                lastNode.month === curDate.getMonth() &&
+                lastNode.year === curDate.getFullYear()
+              ) {
+                lastNode.nodes.push(cur);
+                return prev;
+              } else {
+                return [
+                  ...prev,
+                  {
+                    nodes: [cur],
+                    month: curDate.getMonth(),
+                    year: curDate.getFullYear(),
+                  },
+                ];
+              }
+            },
+            firstNode
+              ? [
+                  {
+                    nodes: [firstNode],
+                    month: firstDate.getMonth(),
+                    year: firstDate.getFullYear(),
+                  },
+                ]
+              : []
+          );
+          return `${renderComponent({
+            Component: DailyLog,
+            id: `${p}-daily-log`,
+            props: {
+              allContent: allContent.map(({ nodes, ...p }) => ({
+                ...p,
+                html: convertContentToHtml({
+                  content: nodes,
+                  viewType: pageContent.viewType,
+                  level: 0,
+                  pagesToHrefs,
+                  components: () => "",
+                }),
+              })),
+            },
           })}`;
         }
       }
@@ -333,7 +426,7 @@ export const renderHtmlFromPage = ({
     },
   });
   const hydratedHtml = config.template
-    .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
+    .replace("</head>", `${DEFAULT_STYLE}${DEFAULT_SCRIPT}${head}</head>`)
     .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
     .replace(
