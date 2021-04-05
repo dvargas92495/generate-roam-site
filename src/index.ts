@@ -321,16 +321,20 @@ const convertContentToHtml = ({
       if (/table/i.test(s)) {
         const data = t.children;
         t.children = [];
-        return `<table><tbody>${data.map(
-          (row) =>
-            `<tr>${[row, ...row.children.flatMap(allBlockMapper)].map(
-              (td) =>
-                `<td>${marked(td.text, {
-                  pagesToHrefs,
-                  components: componentsWithChildren,
-                })}</td>`
-            ).join('')}</tr>`
-        ).join('')}</tbody></table>`;
+        return `<table><tbody>${data
+          .map(
+            (row) =>
+              `<tr>${[row, ...row.children.flatMap(allBlockMapper)]
+                .map(
+                  (td) =>
+                    `<td>${marked(td.text, {
+                      pagesToHrefs,
+                      components: componentsWithChildren,
+                    })}</td>`
+                )
+                .join("")}</tr>`
+          )
+          .join("")}</tbody></table>`;
       }
       return "";
     };
