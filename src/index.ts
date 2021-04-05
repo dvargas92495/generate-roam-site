@@ -54,6 +54,12 @@ const extractTag = (tag: string) =>
     ? tag.substring(1)
     : tag;
 
+/**
+ * 
+<meta name="description" content="$\{PAGE_DESCRIPTION}"/>
+<meta property="og:description" content="$\{PAGE_DESCRIPTION}">
+ onload="bodyOnLoad();"
+ */
 export const defaultConfig = {
   index: "Website Index",
   filter: [],
@@ -62,8 +68,10 @@ export const defaultConfig = {
 <head>
 <meta charset="utf-8"/>
 <title>$\{PAGE_NAME}</title>
+<meta property="og:title" content="$\{PAGE_NAME}">
+<meta property="og:type" content="website">
 </head>
-<body onload="bodyOnLoad();">
+<body>
 <div id="content">
 $\{PAGE_CONTENT}
 </div>
@@ -89,9 +97,21 @@ const DEFAULT_STYLE = `<style>
 .document-bullet {
   list-style: none;
 }
+td {
+  font-size: 12px;
+  min-width: 100px;
+  max-height: 20px;
+  padding: 8px 16px;
+  border: 1px solid grey;
+}
+table {
+  border-spacing: 0;
+  border-collapse: collapse;
+}
 </style>
 `;
 
+/*
 const DEFAULT_SCRIPT = `<script src="https://unpkg.com/react@17/umd/react.${
   process.env.NODE_ENV === "production" ? "production.min" : "development"
 }.js" crossorigin></script>
@@ -117,6 +137,7 @@ const bodyOnLoad = () => {
   );
 };
 </script>`;
+*/
 
 const renderComponent = ({
   Component,
@@ -127,13 +148,16 @@ const renderComponent = ({
   id: string;
   props?: Record<string, unknown>;
 }) => {
-  return `<script>componentsToHydrate.push({
+  return ReactDOMServer.renderToString(
+    React.createElement("div", { id }, React.createElement(Component, props))
+  );
+  /*return `<script>componentsToHydrate.push({
     Component: ${Component.name},
     id: "${id}",
     props: ${JSON.stringify(props)}
   })</script>${ReactDOMServer.renderToString(
     React.createElement("div", { id }, React.createElement(Component, props))
-  )}`;
+  )}`;*/
 };
 
 const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
@@ -289,7 +313,31 @@ const convertContentToHtml = ({
     return "";
   }
   const items = content.map((t) => {
-    const inlineMarked = marked(t.text, { pagesToHrefs, components });
+    const componentsWithChildren = (s: string): string => {
+      const parent = components(s);
+      if (parent) {
+        return parent;
+      }
+      if (/table/i.test(s)) {
+        const data = t.children;
+        t.children = [];
+        return `<table><tbody>${data.map(
+          (row) =>
+            `<tr>${[row, ...row.children.flatMap(allBlockMapper)].map(
+              (td) =>
+                `<td>${marked(td.text, {
+                  pagesToHrefs,
+                  components: componentsWithChildren,
+                })}</td>`
+            ).join('')}</tr>`
+        ).join('')}</tbody></table>`;
+      }
+      return "";
+    };
+    const inlineMarked = marked(t.text, {
+      pagesToHrefs,
+      components: componentsWithChildren,
+    });
     const children = convertContentToHtml({
       content: t.children,
       viewType: t.viewType,
@@ -426,7 +474,7 @@ export const renderHtmlFromPage = ({
     },
   });
   const hydratedHtml = config.template
-    .replace("</head>", `${DEFAULT_STYLE}${DEFAULT_SCRIPT}${head}</head>`)
+    .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
     .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
     .replace(
