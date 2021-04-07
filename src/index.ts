@@ -21,9 +21,9 @@ const HEAD_REGEX = new RegExp(
   )})::`
 );
 const DESCRIPTION_REGEX = new RegExp(
-  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace("/", "\\/")}/description`).join(
-    "|"
-  )})::(.*)`
+  `(?:${CONFIG_PAGE_NAMES.map(
+    (c) => `${c.replace("/", "\\/")}/description`
+  ).join("|")})::(.*)`
 );
 const HTML_REGEX = new RegExp("```html\n(.*)```", "s");
 const DAILY_NOTE_PAGE_REGEX = /(January|February|March|April|May|June|July|August|September|October|November|December) [0-3]?[0-9](st|nd|rd|th), [0-9][0-9][0-9][0-9]/;
@@ -774,7 +774,9 @@ export const run = async ({
               ?.text?.match?.(DESCRIPTION_REGEX);
             const title = titleMatch ? titleMatch[1].trim() : pageName;
             const head = headMatch ? headMatch[1] : "";
-            const description = descriptionMatch ? descriptionMatch[1].trim() : '';
+            const description = descriptionMatch
+              ? descriptionMatch[1].trim()
+              : "";
             return [
               pageName,
               {
