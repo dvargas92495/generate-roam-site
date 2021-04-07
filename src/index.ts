@@ -20,6 +20,11 @@ const HEAD_REGEX = new RegExp(
     "|"
   )})::`
 );
+const DESCRIPTION_REGEX = new RegExp(
+  `(?:${CONFIG_PAGE_NAMES.map((c) => `${c.replace("/", "\\/")}/description`).join(
+    "|"
+  )})::(.*)`
+);
 const HTML_REGEX = new RegExp("```html\n(.*)```", "s");
 const DAILY_NOTE_PAGE_REGEX = /(January|February|March|April|May|June|July|August|September|October|November|December) [0-3]?[0-9](st|nd|rd|th), [0-9][0-9][0-9][0-9]/;
 
@@ -56,8 +61,7 @@ const extractTag = (tag: string) =>
 
 /**
  * 
-<meta name="description" content="$\{PAGE_DESCRIPTION}"/>
-<meta property="og:description" content="$\{PAGE_DESCRIPTION}">
+
  onload="bodyOnLoad();"
  */
 export const defaultConfig = {
@@ -67,6 +71,8 @@ export const defaultConfig = {
 <html>
 <head>
 <meta charset="utf-8"/>
+<meta name="description" content="$\{PAGE_DESCRIPTION}"/>
+<meta property="og:description" content="$\{PAGE_DESCRIPTION}">
 <title>$\{PAGE_NAME}</title>
 <meta property="og:title" content="$\{PAGE_NAME}">
 <meta property="og:type" content="website">
@@ -362,6 +368,15 @@ const convertContentToHtml = ({
   return `<${containerTag}>${items.join("\n")}</${containerTag}>`;
 };
 
+type PageContent = {
+  content: TreeNode[];
+  references: { title: string; node: TreeNode }[];
+  title: string;
+  description: string;
+  head: string;
+  viewType: ViewType;
+};
+
 export const renderHtmlFromPage = ({
   outputPath,
   pageContent,
@@ -370,18 +385,12 @@ export const renderHtmlFromPage = ({
   pageNames,
 }: {
   outputPath: string;
-  pageContent: {
-    content: TreeNode[];
-    references: { title: string; node: TreeNode }[];
-    title: string;
-    head: string;
-    viewType: ViewType;
-  };
+  pageContent: PageContent;
   p: string;
   config: Required<InputConfig>;
   pageNames: string[];
 }): void => {
-  const { content, references, title, head } = pageContent;
+  const { content, references, title, head, description } = pageContent;
   const pageNameSet = new Set(pageNames);
   const preparedContent = prepareContent({
     content,
@@ -480,6 +489,7 @@ export const renderHtmlFromPage = ({
   const hydratedHtml = config.template
     .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
     .replace(/\${PAGE_NAME}/g, title)
+    .replace(/\${PAGE_DESCRIPTION}/g, description)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
     .replace(
       /\${REFERENCES}/g,
@@ -513,13 +523,7 @@ export const processSiteData = ({
   config: Required<InputConfig>;
   outputPath: string;
   pages: {
-    [k: string]: {
-      content: TreeNode[];
-      references: { title: string; node: TreeNode }[];
-      title: string;
-      head: string;
-      viewType: ViewType;
-    };
+    [k: string]: PageContent;
   };
 }): InputConfig => {
   info("lets sort");
@@ -765,8 +769,12 @@ export const run = async ({
             const headMatch = allBlocks
               .find((s) => HEAD_REGEX.test(s.text))
               ?.children?.[0]?.text?.match?.(HTML_REGEX);
+            const descriptionMatch = allBlocks
+              .find((s) => DESCRIPTION_REGEX.test(s.text))
+              ?.text?.match?.(DESCRIPTION_REGEX);
             const title = titleMatch ? titleMatch[1].trim() : pageName;
             const head = headMatch ? headMatch[1] : "";
+            const description = descriptionMatch ? descriptionMatch[1].trim() : '';
             return [
               pageName,
               {
@@ -774,6 +782,7 @@ export const run = async ({
                 references,
                 title,
                 head,
+                description,
                 viewType,
               },
             ];

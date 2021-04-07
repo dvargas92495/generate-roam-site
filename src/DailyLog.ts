@@ -28,9 +28,8 @@ const MonthLog = ({ month, year, html }) => {
         style: { cursor: "pointer", userSelect: "none" },
         onClick: () => setShow(!show),
       },
-      `${show ? "▿" : "▹"} ${months[month]} ${year}`
+      `${months[month]} ${year}`
     ),
-    React.createElement("hr"),
     React.createElement("div", {
       dangerouslySetInnerHTML: { __html: html },
       style: { display: show ? "block" : "none" },
