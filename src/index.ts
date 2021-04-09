@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
 import chromium from "chrome-aws-lambda";
-import marked from "roam-marked";
+import { parseInline } from "roam-marked";
 import { Page } from "puppeteer";
 import { parseRoamDate, RoamBlock, TreeNode, ViewType } from "roam-client";
 import React from "react";
@@ -60,9 +60,7 @@ const extractTag = (tag: string) =>
     : tag;
 
 /**
- * 
-
- onload="bodyOnLoad();"
+ * onload="bodyOnLoad();"
  */
 export const defaultConfig = {
   index: "Website Index",
@@ -260,15 +258,7 @@ const convertPageNameToPath = ({
         name.replace(/ /g, "_").replace(/[",?#:$;/@&=+']/g, "")
       )}.html`;
 
-const prepareContent = ({
-  content,
-  index,
-  pageNameSet,
-}: {
-  content: TreeNode[];
-  index: string;
-  pageNameSet: Set<string>;
-}) => {
+const prepareContent = ({ content }: { content: TreeNode[] }) => {
   const filterIgnore = (t: TreeNode) => {
     if (IGNORE_BLOCKS.some((ib) => t.text.trim().includes(ib))) {
       return false;
@@ -276,24 +266,7 @@ const prepareContent = ({
     t.children = t.children.filter(filterIgnore);
     return true;
   };
-  const filteredContent = content.filter(filterIgnore);
-
-  const convertLinks = (t: TreeNode) => {
-    t.text = t.text.replace(new RegExp(`(.*)::`, "g"), (_, name) =>
-      pageNameSet.has(name)
-        ? `**[${name}:](/${convertPageNameToPath({ name, index }).replace(
-            /^index\.html$/,
-            ""
-          )})**`
-        : name
-    );
-    t.children.forEach(convertLinks);
-    if (t.heading > 0) {
-      t.text = `${"".padStart(t.heading, "#")} ${t.text}`;
-    }
-  };
-  filteredContent.forEach(convertLinks);
-  return filteredContent;
+  return content.filter(filterIgnore);
 };
 
 const VIEW_CONTAINER = {
@@ -301,6 +274,8 @@ const VIEW_CONTAINER = {
   document: "div",
   numbered: "ol",
 };
+
+const HEADINGS = ["p", "h1", "h2", "h3"];
 
 const convertContentToHtml = ({
   content,
@@ -333,7 +308,7 @@ const convertContentToHtml = ({
               `<tr>${[row, ...row.children.flatMap(allBlockMapper)]
                 .map(
                   (td) =>
-                    `<td>${marked(td.text, {
+                    `<td>${parseInline(td.text, {
                       pagesToHrefs,
                       components: componentsWithChildren,
                     })}</td>`
@@ -344,7 +319,12 @@ const convertContentToHtml = ({
       }
       return "";
     };
-    const inlineMarked = marked(t.text, {
+    const classlist = [];
+    const textToParse = t.text.replace(/#\.([^\s]*)/g, (_, className) => {
+      classlist.push(className);
+      return '';
+    })
+    const inlineMarked = parseInline(textToParse, {
       pagesToHrefs,
       components: componentsWithChildren,
     });
@@ -355,12 +335,16 @@ const convertContentToHtml = ({
       pagesToHrefs,
       components,
     });
-    const innerHtml = `${inlineMarked}\n${children}`;
-    if (level === 0 && viewType === "document") {
-      return innerHtml;
+    const innerHtml = `<${HEADINGS[t.heading]}>${inlineMarked}</${
+      HEADINGS[t.heading]
+    }>\n${children}`;
+    if ( level > 0 && viewType === "document") {
+      classlist.push('document-bullet');
     }
-    const attrs =
-      level > 0 && viewType === "document" ? ` class="document-bullet"` : "";
+    const attrs = classlist.length ? ` class="${classlist.join(' ')}"` : ''
+    if (level === 0 && viewType === "document") {
+      return `<div${attrs}>${innerHtml}</div>`;
+    }
     return `<li${attrs}>${innerHtml}</li>`;
   });
   const containerTag =
@@ -394,8 +378,6 @@ export const renderHtmlFromPage = ({
   const pageNameSet = new Set(pageNames);
   const preparedContent = prepareContent({
     content,
-    index: config.index,
-    pageNameSet,
   });
   const pagesToHrefs = (name: string) =>
     pageNameSet.has(name)
@@ -425,8 +407,6 @@ export const renderHtmlFromPage = ({
             }));
           const preparedReferenceContent = prepareContent({
             content: referenceContent,
-            index: config.index,
-            pageNameSet,
           });
           const firstNode = preparedReferenceContent[0];
           const firstDate = parseRoamDate(
