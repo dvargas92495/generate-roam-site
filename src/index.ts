@@ -322,8 +322,8 @@ const convertContentToHtml = ({
     const classlist = [];
     const textToParse = t.text.replace(/#\.([^\s]*)/g, (_, className) => {
       classlist.push(className);
-      return '';
-    })
+      return "";
+    });
     const inlineMarked = parseInline(textToParse, {
       pagesToHrefs,
       components: componentsWithChildren,
@@ -338,10 +338,10 @@ const convertContentToHtml = ({
     const innerHtml = `<${HEADINGS[t.heading]}>${inlineMarked}</${
       HEADINGS[t.heading]
     }>\n${children}`;
-    if ( level > 0 && viewType === "document") {
-      classlist.push('document-bullet');
+    if (level > 0 && viewType === "document") {
+      classlist.push("document-bullet");
     }
-    const attrs = classlist.length ? ` class="${classlist.join(' ')}"` : ''
+    const attrs = classlist.length ? ` class="${classlist.join(" ")}"` : "";
     if (level === 0 && viewType === "document") {
       return `<div${attrs}>${innerHtml}</div>`;
     }
