@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
 import chromium from "chrome-aws-lambda";
-import { parseInline } from "roam-marked";
+import { parseInline, RoamContext } from "roam-marked";
 import { Page } from "puppeteer";
 import { parseRoamDate, RoamBlock, TreeNode, ViewType } from "roam-client";
 import React from "react";
@@ -281,21 +281,19 @@ const convertContentToHtml = ({
   content,
   viewType,
   level,
-  pagesToHrefs,
-  components,
+  context,
 }: {
   content: TreeNode[];
   viewType: ViewType;
   level: number;
-  pagesToHrefs: (s: string) => string;
-  components: (s: string) => string;
+  context: Required<RoamContext>;
 }): string => {
   if (content.length === 0) {
     return "";
   }
   const items = content.map((t) => {
     const componentsWithChildren = (s: string): string => {
-      const parent = components(s);
+      const parent = context.components(s);
       if (parent) {
         return parent;
       }
@@ -309,7 +307,7 @@ const convertContentToHtml = ({
                 .map(
                   (td) =>
                     `<td>${parseInline(td.text, {
-                      pagesToHrefs,
+                      ...context,
                       components: componentsWithChildren,
                     })}</td>`
                 )
@@ -325,15 +323,14 @@ const convertContentToHtml = ({
       return "";
     });
     const inlineMarked = parseInline(textToParse, {
-      pagesToHrefs,
+      ...context,
       components: componentsWithChildren,
     });
     const children = convertContentToHtml({
       content: t.children,
       viewType: t.viewType,
       level: level + 1,
-      pagesToHrefs,
-      components,
+      context,
     });
     const innerHtml = `<${HEADINGS[t.heading]}>${inlineMarked}</${
       HEADINGS[t.heading]
@@ -341,11 +338,13 @@ const convertContentToHtml = ({
     if (level > 0 && viewType === "document") {
       classlist.push("document-bullet");
     }
-    const attrs = classlist.length ? ` class="${classlist.join(" ")}"` : "";
+    const attrs = `id="${t.uid}"${
+      classlist.length ? ` class="${classlist.join(" ")}"` : ""
+    }`;
     if (level === 0 && viewType === "document") {
-      return `<div${attrs}>${innerHtml}</div>`;
+      return `<div ${attrs}>${innerHtml}</div>`;
     }
-    return `<li${attrs}>${innerHtml}</li>`;
+    return `<li ${attrs}>${innerHtml}</li>`;
   });
   const containerTag =
     level > 0 && viewType === "document" ? "ul" : VIEW_CONTAINER[viewType];
@@ -367,13 +366,14 @@ export const renderHtmlFromPage = ({
   p,
   config,
   pageNames,
+  blockReferences,
 }: {
   outputPath: string;
   pageContent: PageContent;
   p: string;
   config: Required<InputConfig>;
   pageNames: string[];
-}): void => {
+} & Pick<Required<RoamContext>, "blockReferences">): void => {
   const { content, references, title, head, description } = pageContent;
   const pageNameSet = new Set(pageNames);
   const preparedContent = prepareContent({
@@ -390,80 +390,86 @@ export const renderHtmlFromPage = ({
     content: preparedContent,
     viewType: pageContent.viewType,
     level: 0,
-    pagesToHrefs,
-    components: (s) => {
-      const staticSiteComponent = /static site:(.*)/i.exec(s)?.[1];
-      if (staticSiteComponent) {
-        if (/daily log/i.test(staticSiteComponent)) {
-          const referenceContent = references
-            .filter(({ title }) => DAILY_NOTE_PAGE_REGEX.test(title))
-            .sort(
-              ({ title: a }, { title: b }) =>
-                parseRoamDate(b).valueOf() - parseRoamDate(a).valueOf()
-            )
-            .map(({ node, title }) => ({
-              ...node,
-              text: node.text.replace(p, title),
-            }));
-          const preparedReferenceContent = prepareContent({
-            content: referenceContent,
-          });
-          const firstNode = preparedReferenceContent[0];
-          const firstDate = parseRoamDate(
-            firstNode?.text?.match?.(DAILY_NOTE_PAGE_REGEX)?.[0] || ""
-          );
-          const allContent = preparedReferenceContent.slice(1).reduce(
-            (prev, cur) => {
-              const lastNode = prev[prev.length - 1];
-              const curDate = parseRoamDate(
-                cur.text.match(DAILY_NOTE_PAGE_REGEX)?.[0] || ""
-              );
-              if (
-                lastNode.month === curDate.getMonth() &&
-                lastNode.year === curDate.getFullYear()
-              ) {
-                lastNode.nodes.push(cur);
-                return prev;
-              } else {
-                return [
-                  ...prev,
-                  {
-                    nodes: [cur],
-                    month: curDate.getMonth(),
-                    year: curDate.getFullYear(),
-                  },
-                ];
-              }
-            },
-            firstNode
-              ? [
-                  {
-                    nodes: [firstNode],
-                    month: firstDate.getMonth(),
-                    year: firstDate.getFullYear(),
-                  },
-                ]
-              : []
-          );
-          return `${renderComponent({
-            Component: DailyLog,
-            id: `${p}-daily-log`,
-            props: {
-              allContent: allContent.map(({ nodes, ...p }) => ({
-                ...p,
-                html: convertContentToHtml({
-                  content: nodes,
-                  viewType: pageContent.viewType,
-                  level: 0,
-                  pagesToHrefs,
-                  components: () => "",
-                }),
-              })),
-            },
-          })}`;
+    context: {
+      pagesToHrefs,
+      components: (s) => {
+        const staticSiteComponent = /static site:(.*)/i.exec(s)?.[1];
+        if (staticSiteComponent) {
+          if (/daily log/i.test(staticSiteComponent)) {
+            const referenceContent = references
+              .filter(({ title }) => DAILY_NOTE_PAGE_REGEX.test(title))
+              .sort(
+                ({ title: a }, { title: b }) =>
+                  parseRoamDate(b).valueOf() - parseRoamDate(a).valueOf()
+              )
+              .map(({ node, title }) => ({
+                ...node,
+                text: node.text.replace(p, title),
+              }));
+            const preparedReferenceContent = prepareContent({
+              content: referenceContent,
+            });
+            const firstNode = preparedReferenceContent[0];
+            const firstDate = parseRoamDate(
+              firstNode?.text?.match?.(DAILY_NOTE_PAGE_REGEX)?.[0] || ""
+            );
+            const allContent = preparedReferenceContent.slice(1).reduce(
+              (prev, cur) => {
+                const lastNode = prev[prev.length - 1];
+                const curDate = parseRoamDate(
+                  cur.text.match(DAILY_NOTE_PAGE_REGEX)?.[0] || ""
+                );
+                if (
+                  lastNode.month === curDate.getMonth() &&
+                  lastNode.year === curDate.getFullYear()
+                ) {
+                  lastNode.nodes.push(cur);
+                  return prev;
+                } else {
+                  return [
+                    ...prev,
+                    {
+                      nodes: [cur],
+                      month: curDate.getMonth(),
+                      year: curDate.getFullYear(),
+                    },
+                  ];
+                }
+              },
+              firstNode
+                ? [
+                    {
+                      nodes: [firstNode],
+                      month: firstDate.getMonth(),
+                      year: firstDate.getFullYear(),
+                    },
+                  ]
+                : []
+            );
+            return `${renderComponent({
+              Component: DailyLog,
+              id: `${p}-daily-log`,
+              props: {
+                allContent: allContent.map(({ nodes, ...p }) => ({
+                  ...p,
+                  html: convertContentToHtml({
+                    content: nodes,
+                    viewType: pageContent.viewType,
+                    level: 0,
+                    context: {
+                      pagesToHrefs,
+                      components: () => "",
+                      blockReferences,
+                    },
+                  }),
+                })),
+              },
+            })}`;
+          }
         }
-      }
-      return "";
+        return "";
+      },
+      blockReferences,
     },
   });
   const hydratedHtml = config.template
@@ -506,10 +512,20 @@ export const processSiteData = ({
     [k: string]: PageContent;
   };
 }): InputConfig => {
-  info("lets sort");
   const pageNames = Object.keys(pages).sort();
   info(`resolving ${pageNames.length} pages`);
   info(`Here are some: ${pageNames.slice(0, 5)}`);
+  const blockReferencesCache: {
+    [p: string]: { text: string; page: string };
+  } = {};
+  pageNames.forEach((page) => {
+    const { content } = pages[page];
+    const forEach = (t: TreeNode) => {
+      blockReferencesCache[t.uid] = { text: t.text, page };
+      t.children.forEach(forEach);
+    };
+    content.forEach(forEach);
+  });
   pageNames.map((p) => {
     if (process.env.NODE_ENV === "test") {
       try {
@@ -527,6 +543,7 @@ export const processSiteData = ({
       pageContent: pages[p],
       p,
       pageNames,
+      blockReferences: (t: string) => blockReferencesCache[t],
     });
   });
   return config;
