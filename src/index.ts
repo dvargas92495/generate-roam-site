@@ -292,8 +292,8 @@ const convertContentToHtml = ({
     return "";
   }
   const items = content.map((t) => {
-    const componentsWithChildren = (s: string): string => {
-      const parent = context.components(s);
+    const componentsWithChildren = (s: string, ac?: string): string | false => {
+      const parent = context.components(s, ac);
       if (parent) {
         return parent;
       }
@@ -315,7 +315,7 @@ const convertContentToHtml = ({
           )
           .join("")}</tbody></table>`;
       }
-      return "";
+      return false;
     };
     const classlist = [];
     const textToParse = t.text.replace(/#\.([^\s]*)/g, (_, className) => {
@@ -392,10 +392,9 @@ export const renderHtmlFromPage = ({
     level: 0,
     context: {
       pagesToHrefs,
-      components: (s) => {
-        const staticSiteComponent = /static site:(.*)/i.exec(s)?.[1];
-        if (staticSiteComponent) {
-          if (/daily log/i.test(staticSiteComponent)) {
+      components: (s, ac) => { 
+        if (/static site/i.test(s)) {
+          if (ac && /daily log/i.test(ac)) {
             const referenceContent = references
               .filter(({ title }) => DAILY_NOTE_PAGE_REGEX.test(title))
               .sort(
