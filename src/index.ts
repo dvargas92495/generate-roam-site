@@ -392,7 +392,7 @@ export const renderHtmlFromPage = ({
     level: 0,
     context: {
       pagesToHrefs,
-      components: (s, ac) => { 
+      components: (s, ac) => {
         if (/static site/i.test(s)) {
           if (ac && /daily log/i.test(ac)) {
             const referenceContent = references
