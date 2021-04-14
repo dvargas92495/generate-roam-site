@@ -478,13 +478,13 @@ export const renderHtmlFromPage = ({
     .replace(/\${PAGE_CONTENT}/g, markedContent)
     .replace(
       /\${REFERENCES}/g,
-      references
-        .filter((r) => pageNameSet.has(r.title))
+      Array.from(new Set(references.map(r => r.title)))
+        .filter((r) => pageNameSet.has(r))
         .map((r) =>
-          config.referenceTemplate.replace(/\${REFERENCE}/g, r.title).replace(
+          config.referenceTemplate.replace(/\${REFERENCE}/g, r).replace(
             /\${LINK}/g,
             convertPageNameToPath({
-              name: r.title,
+              name: r,
               index: config.index,
             })
           )
