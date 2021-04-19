@@ -606,6 +606,9 @@ export const run = async ({
           timeout: 120000,
         });
         info("Done waiting for graph to be selectable");
+        await page.evaluate((roamGraph) => document.querySelector(`a[href="#/app/${roamGraph}"]`)?.scrollIntoView(), roamGraph);
+        await page.waitForTimeout(5000);
+        info("Done waiting for page to scroll");
         await page.click(`a[href="#/app/${roamGraph}"]`);
         info(`entering graph ${new Date().toLocaleTimeString()}`);
         await page.waitForSelector("span.bp3-icon-more", {
