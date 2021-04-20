@@ -7,6 +7,12 @@ import { parseRoamDate, RoamBlock, TreeNode, ViewType } from "roam-client";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import DailyLog from "./DailyLog";
+import InlineBlockReference from "./InlineBlockReference";
+
+type HydratedTreeNode = Omit<TreeNode, "children"> & {
+  references: { title: string; uid: string }[];
+  children: HydratedTreeNode[];
+};
 
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
@@ -40,13 +46,14 @@ type InputConfig = {
   filter?: Filter[];
   template?: string;
   referenceTemplate?: string;
+  plugins?: string[];
 };
 
 declare global {
   interface Window {
-    fixViewType: (t: { c: TreeNode; v: ViewType }) => TreeNode;
-    getTreeByBlockId: (id: number) => TreeNode;
-    getTreeByPageName: (name: string) => TreeNode[];
+    fixViewType: (t: { c: HydratedTreeNode; v: ViewType }) => HydratedTreeNode;
+    getTreeByBlockId: (id: number) => HydratedTreeNode;
+    getTreeByPageName: (name: string) => HydratedTreeNode[];
   }
 }
 
@@ -87,6 +94,7 @@ $\{REFERENCES}
 </body>
 </html>`,
   referenceTemplate: '<li><a href="${LINK}">${REFERENCE}</a></li>',
+  plugins: [],
 } as Required<InputConfig>;
 
 const DEFAULT_STYLE = `<style>
@@ -115,53 +123,22 @@ table {
 </style>
 `;
 
-/*
-const DEFAULT_SCRIPT = `<script src="https://unpkg.com/react@17/umd/react.${
-  process.env.NODE_ENV === "production" ? "production.min" : "development"
-}.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@17/umd/react-dom.${
-  process.env.NODE_ENV === "production" ? "production.min" : "development"
-}.js" crossorigin></script>
-<script>
-${fs
-  .readFileSync(path.join(__dirname, "DailyLog.ts"))
-  .toString()
-  .split("\n")
-  .slice(2, -2)
-  .join("\n")
-  .replace(": React.ReactElemnt", "")}
-const componentsToHydrate = [];
-const bodyOnLoad = () => {
-  componentsToHydrate.forEach(
-    ({Component, id, props}) => 
-      ReactDOM.hydrate(
-        React.createElement(Component, props), 
-        document.getElementById(id)
-      )
-  );
-};
-</script>`;
-*/
-
-const renderComponent = ({
+const renderComponent = <T extends Record<string, unknown>>({
   Component,
   id,
-  props = {},
+  props,
 }: {
-  Component: React.FC;
+  Component: React.FunctionComponent<T>;
   id: string;
-  props?: Record<string, unknown>;
+  props?: T;
 }) => {
   return ReactDOMServer.renderToString(
-    React.createElement("div", { id }, React.createElement(Component, props))
+    React.createElement(
+      "div",
+      { id, className: "roamjs-react-plugin" },
+      React.createElement(Component, props)
+    )
   );
-  /*return `<script>componentsToHydrate.push({
-    Component: ${Component.name},
-    id: "${id}",
-    props: ${JSON.stringify(props)}
-  })</script>${ReactDOMServer.renderToString(
-    React.createElement("div", { id }, React.createElement(Component, props))
-  )}`;*/
 };
 
 const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
@@ -212,6 +189,7 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
   const filterNode = getConfigNode("filter");
   const templateNode = getConfigNode("template");
   const referenceTemplateNode = getConfigNode("reference template");
+  const pluginsNode = getConfigNode("plugins");
   const getCode = (node?: TreeNode) =>
     (node?.children || [])
       .map((s) => s.text.match(HTML_REGEX))
@@ -237,11 +215,15 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
   const withReferenceTemplate: InputConfig = referenceTemplate
     ? { referenceTemplate }
     : {};
+  const withPlugins: InputConfig = pluginsNode?.children?.length
+    ? { plugins: pluginsNode.children.map((p) => p.text) }
+    : {};
   return {
     ...withIndex,
     ...withFilter,
     ...withTemplate,
     ...withReferenceTemplate,
+    ...withPlugins,
   };
 };
 
@@ -258,8 +240,8 @@ const convertPageNameToPath = ({
         name.replace(/ /g, "_").replace(/[",?#:$;/@&=+']/g, "")
       )}.html`;
 
-const prepareContent = ({ content }: { content: TreeNode[] }) => {
-  const filterIgnore = (t: TreeNode) => {
+const prepareContent = ({ content }: { content: HydratedTreeNode[] }) => {
+  const filterIgnore = (t: HydratedTreeNode) => {
     if (IGNORE_BLOCKS.some((ib) => t.text.trim().includes(ib))) {
       return false;
     }
@@ -282,12 +264,14 @@ const convertContentToHtml = ({
   viewType,
   level,
   context,
+  useInlineBlockReferences,
+  pageNameSet,
 }: {
-  content: TreeNode[];
-  viewType: ViewType;
   level: number;
   context: Required<RoamContext>;
-}): string => {
+  useInlineBlockReferences: boolean;
+  pageNameSet: Set<string>;
+} & Pick<PageContent, "content" | "viewType">): string => {
   if (content.length === 0) {
     return "";
   }
@@ -329,22 +313,38 @@ const convertContentToHtml = ({
     const children = convertContentToHtml({
       content: t.children,
       viewType: t.viewType,
+      useInlineBlockReferences,
       level: level + 1,
       context,
+      pageNameSet,
     });
     const innerHtml = `<${HEADINGS[t.heading]}>${inlineMarked}</${
       HEADINGS[t.heading]
-    }>\n${children}`;
+    }>${
+      useInlineBlockReferences
+        ? renderComponent({
+            Component: InlineBlockReference,
+            id: `${t.uid}-inline-references`,
+            props: {
+              blockReferences: t.references.filter((tr) =>
+                pageNameSet.has(tr.title)
+              ),
+            },
+          })
+        : ""
+    }\n${children}`;
     if (level > 0 && viewType === "document") {
       classlist.push("document-bullet");
     }
     const attrs = `id="${t.uid}"${
       classlist.length ? ` class="${classlist.join(" ")}"` : ""
     }`;
-    if (level === 0 && viewType === "document") {
-      return `<div ${attrs}>${innerHtml}</div>`;
-    }
-    return `<li ${attrs}>${innerHtml}</li>`;
+    const blockHtml =
+      level === 0 && viewType === "document"
+        ? `<div ${attrs}>${innerHtml}</div>`
+        : `<li ${attrs}>${innerHtml}</li>`;
+
+    return blockHtml;
   });
   const containerTag =
     level > 0 && viewType === "document" ? "ul" : VIEW_CONTAINER[viewType];
@@ -352,8 +352,8 @@ const convertContentToHtml = ({
 };
 
 type PageContent = {
-  content: TreeNode[];
-  references: { title: string; node: TreeNode }[];
+  content: HydratedTreeNode[];
+  references: { title: string; node: HydratedTreeNode }[];
   title: string;
   description: string;
   head: string;
@@ -386,9 +386,14 @@ export const renderHtmlFromPage = ({
           ""
         )}`
       : "";
+  const useInlineBlockReferences = config.plugins.includes(
+    "inline-block-references"
+  );
   const markedContent = convertContentToHtml({
     content: preparedContent,
     viewType: pageContent.viewType,
+    useInlineBlockReferences,
+    pageNameSet,
     level: 0,
     context: {
       pagesToHrefs,
@@ -454,6 +459,8 @@ export const renderHtmlFromPage = ({
                   html: convertContentToHtml({
                     content: nodes,
                     viewType: pageContent.viewType,
+                    useInlineBlockReferences,
+                    pageNameSet,
                     level: 0,
                     context: {
                       pagesToHrefs,
@@ -626,31 +633,39 @@ export const run = async ({
             .map((b) => b[0] as string);
         });
         await page.evaluate(() => {
-          window.getTreeByBlockId = (blockId: number): TreeNode => {
+          window.getTreeByBlockId = (blockId: number): HydratedTreeNode => {
             const block = window.roamAlphaAPI.pull(
               "[:block/children, :block/string, :block/order, :block/uid, :block/heading, :block/open, :children/view-type]",
               blockId
             );
             const children = block[":block/children"] || [];
+            const uid = block[":block/uid"] || "";
             return {
               text: block[":block/string"] || "",
               order: block[":block/order"] || 0,
-              uid: block[":block/uid"] || "",
+              uid,
               children: children
                 .map((c) => window.getTreeByBlockId(c[":db/id"]))
                 .sort((a, b) => a.order - b.order),
               heading: block[":block/heading"] || 0,
               open: block[":block/open"] || true,
               viewType: block[":children/view-type"]?.substring(1) as ViewType,
+              references: uid
+                ? window.roamAlphaAPI
+                    .q(
+                      `[:find ?u ?t :where [?p :node/title ?t] [?r :block/page ?p] [?r :block/uid ?u] [?r :block/refs ?b] [?b :block/uid "${uid}"]]`
+                    )
+                    .map(([uid, title]: string[]) => ({ uid, title }))
+                : [],
             };
           };
           window.fixViewType = ({
             c,
             v,
           }: {
-            c: TreeNode;
+            c: HydratedTreeNode;
             v: ViewType;
-          }): TreeNode => {
+          }): HydratedTreeNode => {
             if (!c.viewType) {
               c.viewType = v;
             }
@@ -659,7 +674,7 @@ export const run = async ({
             );
             return c;
           };
-          window.getTreeByPageName = (name: string): TreeNode[] => {
+          window.getTreeByPageName = (name: string): HydratedTreeNode[] => {
             const result = window.roamAlphaAPI.q(
               `[:find (pull ?e [:block/children :children/view-type]) :where [?e :node/title "${name
                 .replace(/\\/, "\\\\")
