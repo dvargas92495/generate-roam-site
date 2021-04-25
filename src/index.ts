@@ -8,6 +8,7 @@ import React from "react";
 import ReactDOMServer from "react-dom/server";
 import DailyLog from "./DailyLog";
 import InlineBlockReference from "./InlineBlockReference";
+import Header from "./Header";
 
 type HydratedTreeNode = Omit<TreeNode, "children"> & {
   references: { title: string; uid: string }[];
@@ -46,7 +47,7 @@ type InputConfig = {
   filter?: Filter[];
   template?: string;
   referenceTemplate?: string;
-  plugins?: string[];
+  plugins?: Record<string, Record<string, string[]>>;
 };
 
 declare global {
@@ -66,9 +67,8 @@ const extractTag = (tag: string) =>
     ? tag.substring(1)
     : tag;
 
-/**
- * onload="bodyOnLoad();"
- */
+const componentCache: { [id: string]: string } = {};
+
 export const defaultConfig = {
   index: "Website Index",
   filter: [],
@@ -94,7 +94,7 @@ $\{REFERENCES}
 </body>
 </html>`,
   referenceTemplate: '<li><a href="${LINK}">${REFERENCE}</a></li>',
-  plugins: [],
+  plugins: {},
 } as Required<InputConfig>;
 
 const DEFAULT_STYLE = `<style>
@@ -132,13 +132,15 @@ const renderComponent = <T extends Record<string, unknown>>({
   id: string;
   props?: T;
 }) => {
-  return ReactDOMServer.renderToString(
+  const component = ReactDOMServer.renderToString(
     React.createElement(
       "div",
       { id, className: "roamjs-react-plugin" },
       React.createElement(Component, props)
     )
   );
+  componentCache[id] = component;
+  return component;
 };
 
 const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
@@ -216,7 +218,19 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
     ? { referenceTemplate }
     : {};
   const withPlugins: InputConfig = pluginsNode?.children?.length
-    ? { plugins: pluginsNode.children.map((p) => p.text) }
+    ? {
+        plugins: Object.fromEntries(
+          pluginsNode.children.map((p) => [
+            p.text,
+            Object.fromEntries(
+              (p.children || []).map((c) => [
+                c.text,
+                c.children.map((v) => v.text),
+              ])
+            ),
+          ])
+        ),
+      }
     : {};
   return {
     ...withIndex,
@@ -386,7 +400,8 @@ export const renderHtmlFromPage = ({
           ""
         )}`
       : "";
-  const useInlineBlockReferences = config.plugins.includes(
+  const pluginKeys = Object.keys(config.plugins);
+  const useInlineBlockReferences = pluginKeys.includes(
     "inline-block-references"
   );
   const markedContent = convertContentToHtml({
@@ -480,6 +495,26 @@ export const renderHtmlFromPage = ({
   });
   const hydratedHtml = config.template
     .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
+    .replace(/<body(.*?)>/, (s) =>
+      pluginKeys.includes("header")
+        ? componentCache["roamjs-header"] ||
+          renderComponent({
+            Component: Header,
+            id: "roamjs-header",
+            props: {
+              links: (config.plugins["header"]["links"] || [])
+                .map(extractTag)
+                .map((title) => ({
+                  title,
+                  href: convertPageNameToPath({
+                    name: title,
+                    index: config.index,
+                  }),
+                })),
+            },
+          })
+        : s
+    )
     .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_DESCRIPTION}/g, description)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
@@ -533,16 +568,6 @@ export const processSiteData = ({
     content.forEach(forEach);
   });
   pageNames.map((p) => {
-    if (process.env.NODE_ENV === "test") {
-      try {
-        fs.writeFileSync(
-          path.join(outputPath, `${encodeURIComponent(p)}.json`),
-          JSON.stringify(pages[p].content, null, 4)
-        );
-      } catch {
-        console.warn("failed to output md for", p);
-      }
-    }
     renderHtmlFromPage({
       outputPath,
       config,
@@ -810,11 +835,8 @@ export const run = async ({
             ];
           })
         );
-        info("closing browser");
         await page.close();
-        info("closing browser");
         browser.close();
-        info("returning data");
         return { pages, outputPath, config };
       } catch (e) {
         await page.screenshot({ path: path.join(pathRoot, "error.png") });
