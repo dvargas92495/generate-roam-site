@@ -554,7 +554,9 @@ export const processSiteData = ({
   };
 }): InputConfig => {
   const pageNames = Object.keys(pages).sort();
-  info(`resolving ${pageNames.length} pages ${new Date().toLocaleTimeString()}`);
+  info(
+    `resolving ${pageNames.length} pages ${new Date().toLocaleTimeString()}`
+  );
   info(`Here are some: ${pageNames.slice(0, 5)}`);
   const blockReferencesCache: {
     [p: string]: { text: string; page: string };
@@ -599,7 +601,9 @@ export const run = async ({
   inputConfig?: InputConfig;
 }): Promise<InputConfig> => {
   const { info, error } = logger;
-  info(`Hello ${roamUsername}! Fetching from ${roamGraph}... ${new Date().toLocaleTimeString()}`);
+  info(
+    `Hello ${roamUsername}! Fetching from ${roamGraph}... ${new Date().toLocaleTimeString()}`
+  );
 
   const chromiumPath = await chromium.executablePath;
   const executablePath = chromiumPath
@@ -637,7 +641,9 @@ export const run = async ({
         await page.waitForSelector(`a[href="#/app/${roamGraph}"]`, {
           timeout: 120000,
         });
-        info(`Done waiting for graph to be selectable ${new Date().toLocaleTimeString()}`);
+        info(
+          `Done waiting for graph to be selectable ${new Date().toLocaleTimeString()}`
+        );
         await page.evaluate(
           (roamGraph) =>
             document
@@ -646,7 +652,9 @@ export const run = async ({
           roamGraph
         );
         await page.waitForTimeout(5000);
-        info(`Done waiting for page to scroll ${new Date().toLocaleTimeString()}`);
+        info(
+          `Done waiting for page to scroll ${new Date().toLocaleTimeString()}`
+        );
         await page.click(`a[href="#/app/${roamGraph}"]`);
         info(`entering graph ${new Date().toLocaleTimeString()}`);
         await page.waitForSelector("span.bp3-icon-more", {
@@ -756,7 +764,11 @@ export const run = async ({
               }))
             )
         );
-        info(`title filtered to ${pageNamesWithContent.length} pages ${new Date().toLocaleTimeString()}`);
+        info(
+          `title filtered to ${
+            pageNamesWithContent.length
+          } pages ${new Date().toLocaleTimeString()}`
+        );
         const entries = await Promise.all(
           pageNamesWithContent
             .filter(
@@ -804,7 +816,11 @@ export const run = async ({
                 });
             })
         );
-        info(`content filtered to ${entries.length} entries ${new Date().toLocaleTimeString()}`);
+        info(
+          `content filtered to ${
+            entries.length
+          } entries ${new Date().toLocaleTimeString()}`
+        );
         const pages = Object.fromEntries(
           entries.map(({ content, pageName, references, viewType }) => {
             const allBlocks = content.flatMap(allBlockMapper);
