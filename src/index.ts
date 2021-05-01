@@ -52,6 +52,7 @@ type InputConfig = {
 
 declare global {
   interface Window {
+    gatherBlockReferences: boolean;
     fixViewType: (t: { c: HydratedTreeNode; v: ViewType }) => HydratedTreeNode;
     getTreeByBlockId: (id: number) => HydratedTreeNode;
     getTreeByPageName: (name: string) => HydratedTreeNode[];
@@ -666,6 +667,7 @@ export const run = async ({
             .map((b) => b[0] as string);
         });
         await page.evaluate(() => {
+          window.gatherBlockReferences = true;
           window.getTreeByBlockId = (blockId: number): HydratedTreeNode => {
             const block = window.roamAlphaAPI.pull(
               "[:block/children, :block/string, :block/order, :block/uid, :block/heading, :block/open, :children/view-type]",
@@ -683,13 +685,14 @@ export const run = async ({
               heading: block[":block/heading"] || 0,
               open: block[":block/open"] || true,
               viewType: block[":children/view-type"]?.substring(1) as ViewType,
-              references: uid
-                ? window.roamAlphaAPI
-                    .q(
-                      `[:find ?u ?t :where [?p :node/title ?t] [?r :block/page ?p] [?r :block/uid ?u] [?r :block/refs ?b] [?b :block/uid "${uid}"]]`
-                    )
-                    .map(([uid, title]: string[]) => ({ uid, title }))
-                : [],
+              references:
+                uid && window.gatherBlockReferences
+                  ? window.roamAlphaAPI
+                      .q(
+                        `[:find ?u ?t :where [?p :node/title ?t] [?r :block/page ?p] [?r :block/uid ?u] [?r :block/refs ?b] [?b :block/uid "${uid}"]]`
+                      )
+                      .map(([uid, title]: string[]) => ({ uid, title }))
+                  : [],
             };
           };
           window.fixViewType = ({
@@ -737,6 +740,11 @@ export const run = async ({
           ...userConfig,
           ...inputConfig,
         };
+        if (!config.plugins["inline-block-references"]) {
+          await page.evaluate(() => {
+            window.gatherBlockReferences = false;
+          });
+        }
 
         const titleFilters = config.filter.length
           ? config.filter.map(getTitleRuleFromNode).filter((f) => !!f)
