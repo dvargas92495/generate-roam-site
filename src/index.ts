@@ -315,7 +315,7 @@ const convertContentToHtml = ({
           .join("")}</tbody></table>`;
       } else if (/static site/i.test(s) && ac) {
         if (/inject/i.test(ac)) {
-          const node = t.children.find(c => HTML_REGEX.test(c.text))?.text;
+          const node = t.children.find((c) => HTML_REGEX.test(c.text))?.text;
           if (node) {
             skipChildren = true;
             return node.match(HTML_REGEX)?.[1] || false;
