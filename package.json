@@ -23,7 +23,7 @@
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
     "roam-client": "^1.31.1",
-    "roam-marked": "^0.10.0"
+    "roam-marked": "^0.10.2"
   },
   "devDependencies": {
     "@types/jest": "^26.0.19",

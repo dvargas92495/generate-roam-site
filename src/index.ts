@@ -291,15 +291,15 @@ const convertContentToHtml = ({
     return "";
   }
   const items = content.map((t) => {
+    let skipChildren = false;
     const componentsWithChildren = (s: string, ac?: string): string | false => {
       const parent = context.components(s, ac);
       if (parent) {
         return parent;
       }
       if (/table/i.test(s)) {
-        const data = t.children;
-        t.children = [];
-        return `<table><tbody>${data
+        skipChildren = true;
+        return `<table><tbody>${t.children
           .map(
             (row) =>
               `<tr>${[row, ...row.children.flatMap(allBlockMapper)]
@@ -313,6 +313,14 @@ const convertContentToHtml = ({
                 .join("")}</tr>`
           )
           .join("")}</tbody></table>`;
+      } else if (/static site/i.test(s) && ac) {
+        if (/inject/i.test(ac)) {
+          const node = t.children.find(c => HTML_REGEX.test(c.text))?.text;
+          if (node) {
+            skipChildren = true;
+            return node.match(HTML_REGEX)?.[1] || false;
+          }
+        }
       }
       return false;
     };
@@ -325,14 +333,16 @@ const convertContentToHtml = ({
       ...context,
       components: componentsWithChildren,
     });
-    const children = convertContentToHtml({
-      content: t.children,
-      viewType: t.viewType,
-      useInlineBlockReferences,
-      level: level + 1,
-      context,
-      pageNameSet,
-    });
+    const children = skipChildren
+      ? ""
+      : convertContentToHtml({
+          content: t.children,
+          viewType: t.viewType,
+          useInlineBlockReferences,
+          level: level + 1,
+          context,
+          pageNameSet,
+        });
     const innerHtml = `<${HEADINGS[t.heading]}>${inlineMarked}</${
       HEADINGS[t.heading]
     }>${
