@@ -600,6 +600,7 @@ export const run = async ({
   logger = { info: console.log, error: console.error },
   pathRoot = process.cwd(),
   inputConfig = {},
+  debug = false,
 }: {
   roamUsername: string;
   roamPassword: string;
@@ -610,6 +611,7 @@ export const run = async ({
   };
   pathRoot?: string;
   inputConfig?: InputConfig;
+  debug?: boolean;
 }): Promise<InputConfig> => {
   const { info, error } = logger;
   info(
@@ -775,12 +777,15 @@ export const run = async ({
               (pageName) => pageName === config.index || titleFilter(pageName)
             )
             .filter((pageName) => !CONFIG_PAGE_NAMES.includes(pageName))
-            .map((pageName) =>
-              getParsedTree({ page, pageName }).then((content) => ({
+            .map((pageName) => {
+              if (debug) {
+                info(`Getting parsed tree for page ${pageName}`);
+              }
+              return getParsedTree({ page, pageName }).then((content) => ({
                 pageName,
                 content,
               }))
-            )
+            })
         );
         info(
           `title filtered to ${
