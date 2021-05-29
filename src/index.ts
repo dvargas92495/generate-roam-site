@@ -784,7 +784,7 @@ export const run = async ({
               return getParsedTree({ page, pageName }).then((content) => ({
                 pageName,
                 content,
-              }))
+              }));
             })
         );
         info(
