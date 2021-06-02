@@ -399,7 +399,7 @@ export const renderHtmlFromPage = ({
   config: Required<InputConfig>;
   pageNames: string[];
 } & Pick<Required<RoamContext>, "blockReferences">): void => {
-  const { content, references, title, head, description } = pageContent;
+  const { content, references = [], title, head, description } = pageContent;
   const pageNameSet = new Set(pageNames);
   const preparedContent = prepareContent({
     content,
