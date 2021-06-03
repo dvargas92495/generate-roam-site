@@ -773,9 +773,9 @@ export const run = async ({
 
         const titleFilter = (t: string) =>
           !titleFilters.length || titleFilters.some((r) => r && r(t));
-          //(titleFilters.length || contentFilters.length) && t === '0001-325'
+        //(titleFilters.length || contentFilters.length) && t === '0001-325'
         const contentFilter = (c: TreeNode[]) =>
-        //c ? titleFilters.length || contentFilters.length : true
+          //c ? titleFilters.length || contentFilters.length : true
           !contentFilters.length || contentFilters.some((r) => r && r(c));
 
         info(`querying data ${new Date().toLocaleTimeString()}`);
