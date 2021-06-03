@@ -52,10 +52,9 @@ type InputConfig = {
 
 declare global {
   interface Window {
-    gatherBlockReferences: boolean;
-    fixViewType: (t: { c: HydratedTreeNode; v: ViewType }) => HydratedTreeNode;
-    getTreeByBlockId: (id: number) => HydratedTreeNode;
-    getTreeByPageName: (name: string) => HydratedTreeNode[];
+    fixViewType: (t: { c: TreeNode; v: ViewType }) => TreeNode;
+    getTreeByBlockId: (id: number) => TreeNode;
+    getTreeByPageName: (name: string) => TreeNode[];
   }
 }
 
@@ -679,8 +678,7 @@ export const run = async ({
             .map((b) => b[0] as string);
         });
         await page.evaluate(() => {
-          window.gatherBlockReferences = true;
-          window.getTreeByBlockId = (blockId: number): HydratedTreeNode => {
+          window.getTreeByBlockId = (blockId: number): TreeNode => {
             const block = window.roamAlphaAPI.pull(
               "[:block/children, :block/string, :block/order, :block/uid, :block/heading, :block/open, :children/view-type]",
               blockId
@@ -697,23 +695,15 @@ export const run = async ({
               heading: block[":block/heading"] || 0,
               open: block[":block/open"] || true,
               viewType: block[":children/view-type"]?.substring(1) as ViewType,
-              references:
-                uid && window.gatherBlockReferences
-                  ? window.roamAlphaAPI
-                      .q(
-                        `[:find ?u ?t :where [?p :node/title ?t] [?r :block/page ?p] [?r :block/uid ?u] [?r :block/refs ?b] [?b :block/uid "${uid}"]]`
-                      )
-                      .map(([uid, title]: string[]) => ({ uid, title }))
-                  : [],
             };
           };
           window.fixViewType = ({
             c,
             v,
           }: {
-            c: HydratedTreeNode;
+            c: TreeNode;
             v: ViewType;
-          }): HydratedTreeNode => {
+          }): TreeNode => {
             if (!c.viewType) {
               c.viewType = v;
             }
@@ -722,7 +712,7 @@ export const run = async ({
             );
             return c;
           };
-          window.getTreeByPageName = (name: string): HydratedTreeNode[] => {
+          window.getTreeByPageName = (name: string): TreeNode[] => {
             const result = window.roamAlphaAPI.q(
               `[:find (pull ?e [:block/children :children/view-type]) :where [?e :node/title "${name
                 .replace(/\\/, "\\\\")
@@ -752,11 +742,27 @@ export const run = async ({
           ...userConfig,
           ...inputConfig,
         };
-        if (!config.plugins["inline-block-references"]) {
-          await page.evaluate(() => {
-            window.gatherBlockReferences = false;
-          });
-        }
+        const blockReferences = config.plugins["inline-block-references"]
+          ? await page.evaluate(() => {
+              return window.roamAlphaAPI
+                .q(
+                  "[:find ?pu ?pt ?ru :where [?pp :node/title ?pt] [?p :block/page ?pp] [?p :block/uid ?pu] [?r :block/uid ?ru] [?p :block/refs ?r]]"
+                )
+                .reduce((cur, [uid, title, u]: string[]) => {
+                  if (cur[u]) {
+                    cur[u].push({ uid, title });
+                  } else {
+                    cur[u] = [{ uid, title }];
+                  }
+                  return cur;
+                }, {} as { [uid: string]: { uid: string; title: string }[] });
+            })
+          : ({} as { [uid: string]: { uid: string; title: string }[] });
+        const getReferences = (t: TreeNode): HydratedTreeNode => ({
+          ...t,
+          references: blockReferences[t.uid] || [],
+          children: t.children.map(getReferences),
+        });
 
         const titleFilters = config.filter.length
           ? config.filter.map(getTitleRuleFromNode).filter((f) => !!f)
@@ -767,7 +773,9 @@ export const run = async ({
 
         const titleFilter = (t: string) =>
           !titleFilters.length || titleFilters.some((r) => r && r(t));
+          //(titleFilters.length || contentFilters.length) && t === '0001-325'
         const contentFilter = (c: TreeNode[]) =>
+        //c ? titleFilters.length || contentFilters.length : true
           !contentFilters.length || contentFilters.some((r) => r && r(c));
 
         info(`querying data ${new Date().toLocaleTimeString()}`);
@@ -808,10 +816,10 @@ export const run = async ({
                           .replace(/\\/, "\\\\")
                           .replace(/"/g, '\\"')}"]]`
                       )
-                      .map(([title, id]) => ({
-                        title,
+                      .map((args) => ({
+                        title: args[0] as string,
                         node: window.fixViewType({
-                          c: window.getTreeByBlockId(id),
+                          c: window.getTreeByBlockId(args[1] as number),
                           v: "bullet",
                         }),
                       })),
@@ -828,9 +836,12 @@ export const run = async ({
                 ),
               ])
                 .then(([references, viewType]) => ({
-                  references,
+                  references: references.map((r) => ({
+                    ...r,
+                    node: getReferences(r.node),
+                  })),
                   pageName,
-                  content,
+                  content: content.map(getReferences),
                   viewType,
                 }))
                 .catch((e) => {
