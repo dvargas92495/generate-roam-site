@@ -547,7 +547,7 @@ export const renderHtmlFromPage = ({
     name: p,
     index: config.index,
   });
-  const fileName = htmlFileName === '/' ? 'index.html' : `${htmlFileName}.html`;
+  const fileName = htmlFileName === "/" ? "index.html" : `${htmlFileName}.html`;
   fs.writeFileSync(path.join(outputPath, fileName), hydratedHtml);
 };
 
