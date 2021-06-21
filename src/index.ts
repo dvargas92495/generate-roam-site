@@ -249,10 +249,10 @@ const convertPageNameToPath = ({
   index: string;
 }) =>
   name === index
-    ? "index.html"
+    ? "/"
     : `${encodeURIComponent(
         name.replace(/ /g, "_").replace(/[",?#:$;/@&=+']/g, "")
-      )}.html`;
+      )}`;
 
 const prepareContent = ({ content }: { content: HydratedTreeNode[] }) => {
   const filterIgnore = (t: HydratedTreeNode) => {
@@ -406,7 +406,7 @@ export const renderHtmlFromPage = ({
   const pagesToHrefs = (name: string) =>
     pageNameSet.has(name)
       ? `/${convertPageNameToPath({ name, index: config.index }).replace(
-          /^index\.html$/,
+          /^\/$/,
           ""
         )}`
       : "";
@@ -547,7 +547,8 @@ export const renderHtmlFromPage = ({
     name: p,
     index: config.index,
   });
-  fs.writeFileSync(path.join(outputPath, htmlFileName), hydratedHtml);
+  const fileName = htmlFileName === '/' ? 'index.html' : `${htmlFileName}.html`;
+  fs.writeFileSync(path.join(outputPath, fileName), hydratedHtml);
 };
 
 export const processSiteData = ({
