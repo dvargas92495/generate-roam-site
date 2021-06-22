@@ -226,7 +226,10 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
           pluginsNode.children.map((p) => [
             p.text,
             Object.fromEntries(
-              (p.children || []).map((c) => [c.text, c.children.map((v) => v.text)])
+              (p.children || []).map((c) => [
+                c.text,
+                c.children.map((v) => v.text),
+              ])
             ),
           ])
         ),
