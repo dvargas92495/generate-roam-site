@@ -48,6 +48,7 @@ type InputConfig = {
   template?: string;
   referenceTemplate?: string;
   plugins?: Record<string, Record<string, string[]>>;
+  theme?: Record<string, Record<string, string>>;
 };
 
 declare global {
@@ -95,6 +96,7 @@ $\{REFERENCES}
 </html>`,
   referenceTemplate: '<li><a href="${LINK}">${REFERENCE}</a></li>',
   plugins: {},
+  theme: {},
 } as Required<InputConfig>;
 
 const DEFAULT_STYLE = `<style>
@@ -192,6 +194,7 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
   const templateNode = getConfigNode("template");
   const referenceTemplateNode = getConfigNode("reference template");
   const pluginsNode = getConfigNode("plugins");
+  const themeNode = getConfigNode("theme");
   const getCode = (node?: TreeNode) =>
     (node?.children || [])
       .map((s) => s.text.match(HTML_REGEX))
@@ -223,10 +226,19 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
           pluginsNode.children.map((p) => [
             p.text,
             Object.fromEntries(
-              (p.children || []).map((c) => [
-                c.text,
-                c.children.map((v) => v.text),
-              ])
+              (p.children || []).map((c) => [c.text, c.children.map((v) => v.text)])
+            ),
+          ])
+        ),
+      }
+    : {};
+  const withTheme: InputConfig = themeNode?.children?.length
+    ? {
+        theme: Object.fromEntries(
+          themeNode.children.map((p) => [
+            p.text,
+            Object.fromEntries(
+              (p.children || []).map((c) => [c.text, c.children[0]?.text])
             ),
           ])
         ),
@@ -238,6 +250,7 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
     ...withTemplate,
     ...withReferenceTemplate,
     ...withPlugins,
+    ...withTheme,
   };
 };
 
@@ -391,12 +404,14 @@ export const renderHtmlFromPage = ({
   config,
   pageNames,
   blockReferences,
+  theme,
 }: {
   outputPath: string;
   pageContent: PageContent;
   p: string;
   config: Required<InputConfig>;
   pageNames: string[];
+  theme: string;
 } & Pick<Required<RoamContext>, "blockReferences">): void => {
   const { content, references = [], title, head, description } = pageContent;
   const pageNameSet = new Set(pageNames);
@@ -504,7 +519,10 @@ export const renderHtmlFromPage = ({
     },
   });
   const hydratedHtml = config.template
-    .replace("</head>", `${DEFAULT_STYLE}${head}</head>`)
+    .replace(
+      "</head>",
+      `${DEFAULT_STYLE.replace(/<\/style>/, theme)}${head}</head>`
+    )
     .replace(/<body(.*?)>/, (s) =>
       pluginKeys.includes("header")
         ? componentCache["roamjs-header"] ||
@@ -580,6 +598,20 @@ export const processSiteData = ({
     };
     content.forEach(forEach);
   });
+  let theme = "</style>\n";
+  if (config.theme.text) {
+    if (config.theme.text.font) {
+      theme = `body {\n  font-family: ${config.theme.text.font};\n}\n${theme}`;
+    }
+  }
+  if (config.theme.layout) {
+    const { width } = config.theme.layout;
+    if (width) {
+      const widthStyle = /\d$/.test(width) ? `${width}px` : width;
+      theme = `#content {\n  margin: auto;\n  width: ${widthStyle};\n}\n${theme}`;
+    }
+  }
+
   pageNames.map((p) => {
     renderHtmlFromPage({
       outputPath,
@@ -588,6 +620,7 @@ export const processSiteData = ({
       p,
       pageNames,
       blockReferences: (t: string) => blockReferencesCache[t],
+      theme,
     });
   });
   return config;
