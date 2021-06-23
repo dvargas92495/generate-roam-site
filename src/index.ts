@@ -611,7 +611,7 @@ export const processSiteData = ({
     const { width } = config.theme.layout;
     if (width) {
       const widthStyle = /\d$/.test(width) ? `${width}px` : width;
-      theme = `#content {\n  margin: auto;\n  width: ${widthStyle};\n}\n${theme}`;
+      theme = `#content, #references {\n  margin: auto;\n  width: ${widthStyle};\n}\n${theme}`;
     }
   }
 
@@ -660,6 +660,15 @@ export const run = async ({
     : process.platform === "win32"
     ? "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
     : "/usr/bin/google-chrome-stable";
+
+  // webpack 5 why are you getting rid of process
+  if (typeof process === "undefined") {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    process = { version: "v12.16.1" };
+  } else if (!process.version) {
+    process.version = "v12.16.1";
+  }
 
   return chromium.puppeteer
     .launch({
