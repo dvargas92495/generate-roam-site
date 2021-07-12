@@ -19,14 +19,16 @@
   "dependencies": {
     "chrome-aws-lambda": "^5.5.0",
     "copyfiles": "^2.4.1",
+    "jsdom": "^16.6.0",
     "puppeteer-core": "^5.5.0",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
     "roam-client": "^1.31.1",
-    "roam-marked": "^0.10.10"
+    "roam-marked": "^0.10.11"
   },
   "devDependencies": {
     "@types/jest": "^26.0.19",
+    "@types/jsdom": "^16.2.13",
     "@types/puppeteer": "^5.4.2",
     "@types/react": "^17.0.3",
     "@types/react-dom": "^17.0.3",

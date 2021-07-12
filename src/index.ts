@@ -6,6 +6,7 @@ import { Page } from "puppeteer";
 import { parseRoamDate, RoamBlock, TreeNode, ViewType } from "roam-client";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
+import { JSDOM } from "jsdom";
 import DailyLog from "./DailyLog";
 import InlineBlockReference from "./InlineBlockReference";
 import Header from "./Header";
@@ -73,7 +74,7 @@ const componentCache: { [id: string]: string } = {};
 export const defaultConfig = {
   index: "Website Index",
   filter: [],
-  template: `<!doctype html>
+  template: `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8"/>
@@ -526,25 +527,29 @@ export const renderHtmlFromPage = ({
       "</head>",
       `${DEFAULT_STYLE.replace(/<\/style>/, theme)}${head}</head>`
     )
-    .replace(/<body(.*?)>/, (s) =>
-      pluginKeys.includes("header")
-        ? componentCache["roamjs-header"] ||
-          renderComponent({
-            Component: Header,
-            id: "roamjs-header",
-            props: {
-              links: (config.plugins["header"]["links"] || [])
-                .map(extractTag)
-                .map((title) => ({
-                  title,
-                  href: convertPageNameToPath({
-                    name: title,
-                    index: config.index,
-                  }),
-                })),
-            },
-          })
-        : s
+    .replace(
+      /<body(.*?)>/,
+      (s) =>
+        `${s}${
+          pluginKeys.includes("header")
+            ? componentCache["roamjs-header"] ||
+              renderComponent({
+                Component: Header,
+                id: "roamjs-header",
+                props: {
+                  links: (config.plugins["header"]["links"] || [])
+                    .map(extractTag)
+                    .map((title) => ({
+                      title,
+                      href: convertPageNameToPath({
+                        name: title,
+                        index: config.index,
+                      }),
+                    })),
+                },
+              })
+            : ""
+        }`
     )
     .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_DESCRIPTION}/g, description)
@@ -564,12 +569,14 @@ export const renderHtmlFromPage = ({
         )
         .join("\n")
     );
+  const dom = new JSDOM(hydratedHtml);
+  const newHtml = dom.serialize();
   const htmlFileName = convertPageNameToPath({
     name: p,
     index: config.index,
   });
   const fileName = htmlFileName === "/" ? "index.html" : `${htmlFileName}.html`;
-  fs.writeFileSync(path.join(outputPath, fileName), hydratedHtml);
+  fs.writeFileSync(path.join(outputPath, fileName), newHtml);
 };
 
 export const processSiteData = ({
@@ -660,15 +667,6 @@ export const run = async ({
     : process.platform === "win32"
     ? "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
     : "/usr/bin/google-chrome-stable";
-
-  // webpack 5 why are you getting rid of process
-  if (typeof process === "undefined") {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    process = { version: "v12.16.1" };
-  } else if (!process.version) {
-    process.version = "v12.16.1";
-  }
 
   return chromium.puppeteer
     .launch({
