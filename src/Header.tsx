@@ -1,10 +1,17 @@
-import React from "react";
+import React, { useEffect } from "react";
+import ReactDOM from "react-dom";
+import ReactDOMServer from "react-dom/server";
+import { extractTag } from "roam-client";
+import { ensureReact, RenderFunction } from "./util";
 
-const Header = ({
-  links,
-}: {
+type Props = {
   links: { title: string; href: string }[];
-}): React.ReactElement => {
+};
+
+const Header = ({ links }: Props): React.ReactElement => {
+  useEffect(() => {
+    console.log("react loaded!");
+  }, []);
   return (
     <>
       <style>
@@ -85,6 +92,45 @@ const Header = ({
       </header>
     </>
   );
+};
+
+export const ID = "roamjs-header";
+
+if (typeof document !== "undefined") {
+  ReactDOM.hydrate(
+    <Header {...(window.roamjsProps.header as Props)} />,
+    document.getElementById(ID)
+  );
+}
+
+let cache = "";
+
+export const render: RenderFunction = (dom, props, context) => {
+  const componentProps = {
+    links: (props["links"] || []).map(extractTag).map((title) => ({
+      title,
+      href: context.convertPageNameToPath(title),
+    })),
+  };
+  const innerHtml =
+    cache ||
+    (cache = ReactDOMServer.renderToString(<Header {...componentProps} />));
+  const { document } = dom.window;
+  const { body, head } = document;
+  const container = document.createElement("div");
+  container.id = "div";
+  body.insertBefore(container, body.firstElementChild);
+  container.innerHTML = innerHtml;
+  ensureReact(document);
+  const propScript = document.createElement("script");
+  propScript.innerText = `window.roamjsProps = {
+    ...window.roamjsProps,
+    ...(${JSON.stringify(componentProps)})    
+  }`;
+  head.appendChild(propScript);
+  const componentScript = document.createElement("script");
+  componentScript.src = "https://roamjs.com/static-site/header.js";
+  componentScript.defer = true;
 };
 
 export default Header;

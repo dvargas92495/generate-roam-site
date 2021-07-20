@@ -3,13 +3,20 @@ import fs from "fs";
 import chromium from "chrome-aws-lambda";
 import { parseInline, RoamContext } from "roam-marked";
 import { Page } from "puppeteer";
-import { parseRoamDate, RoamBlock, TreeNode, ViewType } from "roam-client";
+import {
+  parseRoamDate,
+  RoamBlock,
+  TreeNode,
+  ViewType,
+  extractTag,
+} from "roam-client";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import { JSDOM } from "jsdom";
 import DailyLog from "./DailyLog";
 import InlineBlockReference from "./InlineBlockReference";
-import Header from "./Header";
+import { render as renderHeader } from "./Header";
+import { RenderFunction } from "./util";
 
 type HydratedTreeNode = Omit<TreeNode, "children"> & {
   references: { title: string; uid: string }[];
@@ -57,19 +64,9 @@ declare global {
     fixViewType: (t: { c: TreeNode; v: ViewType }) => TreeNode;
     getTreeByBlockId: (id: number) => TreeNode;
     getTreeByPageName: (name: string) => TreeNode[];
+    roamjsProps: { [id: string]: Record<string, unknown> };
   }
 }
-
-const extractTag = (tag: string) =>
-  tag.startsWith("#[[") && tag.endsWith("]]")
-    ? tag.substring(3, tag.length - 2)
-    : tag.startsWith("[[") && tag.endsWith("]]")
-    ? tag.substring(2, tag.length - 2)
-    : tag.startsWith("#")
-    ? tag.substring(1)
-    : tag;
-
-const componentCache: { [id: string]: string } = {};
 
 export const defaultConfig = {
   index: "Website Index",
@@ -142,7 +139,6 @@ const renderComponent = <T extends Record<string, unknown>>({
       React.createElement(Component, props)
     )
   );
-  componentCache[id] = component;
   return component;
 };
 
@@ -257,19 +253,6 @@ const getConfigFromPage = (parsedTree: TreeNode[]) => {
     ...withTheme,
   };
 };
-
-const convertPageNameToPath = ({
-  name,
-  index,
-}: {
-  name: string;
-  index: string;
-}) =>
-  name === index
-    ? "/"
-    : `${encodeURIComponent(
-        name.replace(/ /g, "_").replace(/[",?#:$;/@&=+']/g, "")
-      )}`;
 
 const prepareContent = ({ content }: { content: HydratedTreeNode[] }) => {
   const filterIgnore = (t: HydratedTreeNode) => {
@@ -401,6 +384,12 @@ type PageContent = {
   viewType: ViewType;
 };
 
+const PLUGIN_RENDER: {
+  [key: string]: RenderFunction;
+} = {
+  header: renderHeader,
+};
+
 export const renderHtmlFromPage = ({
   outputPath,
   pageContent,
@@ -422,12 +411,16 @@ export const renderHtmlFromPage = ({
   const preparedContent = prepareContent({
     content,
   });
+  const convertPageNameToPath = (name: string): string =>
+    name === config.index
+      ? "/"
+      : `${encodeURIComponent(
+          name.replace(/ /g, "_").replace(/[",?#:$;/@&=+']/g, "")
+        )}`;
+  const htmlFileName = convertPageNameToPath(p);
   const pagesToHrefs = (name: string) =>
     pageNameSet.has(name)
-      ? `/${convertPageNameToPath({ name, index: config.index }).replace(
-          /^\/$/,
-          ""
-        )}`
+      ? `/${convertPageNameToPath(name).replace(/^\/$/, "")}`
       : "";
   const pluginKeys = Object.keys(config.plugins);
   const useInlineBlockReferences = pluginKeys.includes(
@@ -527,30 +520,6 @@ export const renderHtmlFromPage = ({
       "</head>",
       `${DEFAULT_STYLE.replace(/<\/style>/, theme)}${head}</head>`
     )
-    .replace(
-      /<body(.*?)>/,
-      (s) =>
-        `${s}${
-          pluginKeys.includes("header")
-            ? componentCache["roamjs-header"] ||
-              renderComponent({
-                Component: Header,
-                id: "roamjs-header",
-                props: {
-                  links: (config.plugins["header"]["links"] || [])
-                    .map(extractTag)
-                    .map((title) => ({
-                      title,
-                      href: convertPageNameToPath({
-                        name: title,
-                        index: config.index,
-                      }),
-                    })),
-                },
-              })
-            : ""
-        }`
-    )
     .replace(/\${PAGE_NAME}/g, title)
     .replace(/\${PAGE_DESCRIPTION}/g, description)
     .replace(/\${PAGE_CONTENT}/g, markedContent)
@@ -559,22 +528,17 @@ export const renderHtmlFromPage = ({
       Array.from(new Set(references.map((r) => r.title)))
         .filter((r) => pageNameSet.has(r))
         .map((r) =>
-          config.referenceTemplate.replace(/\${REFERENCE}/g, r).replace(
-            /\${LINK}/g,
-            convertPageNameToPath({
-              name: r,
-              index: config.index,
-            })
-          )
+          config.referenceTemplate
+            .replace(/\${REFERENCE}/g, r)
+            .replace(/\${LINK}/g, convertPageNameToPath(r))
         )
         .join("\n")
     );
   const dom = new JSDOM(hydratedHtml);
+  pluginKeys.forEach((k) =>
+    PLUGIN_RENDER[k]?.(dom, config.plugins[k], { convertPageNameToPath })
+  );
   const newHtml = dom.serialize();
-  const htmlFileName = convertPageNameToPath({
-    name: p,
-    index: config.index,
-  });
   const fileName = htmlFileName === "/" ? "index.html" : `${htmlFileName}.html`;
   fs.writeFileSync(path.join(outputPath, fileName), newHtml);
 };
@@ -729,6 +693,7 @@ export const run = async ({
             );
             const children = block[":block/children"] || [];
             const uid = block[":block/uid"] || "";
+            const props = block[":block/props"] || {};
             return {
               text: block[":block/string"] || "",
               order: block[":block/order"] || 0,
@@ -739,6 +704,28 @@ export const run = async ({
               heading: block[":block/heading"] || 0,
               open: block[":block/open"] || true,
               viewType: block[":children/view-type"]?.substring(1) as ViewType,
+              editTime: new Date(block[":edit/time"] || 0),
+              textAlign: block[":block/text-align"] || "left",
+              props: {
+                imageResize: Object.fromEntries(
+                  Object.keys(props[":image-size"] || {}).map((p) => [
+                    p,
+                    {
+                      height: props[":image-size"][p][":height"],
+                      width: props[":image-size"][p][":width"],
+                    },
+                  ])
+                ),
+                iframe: Object.fromEntries(
+                  Object.keys(props[":iframe"] || {}).map((p) => [
+                    p,
+                    {
+                      height: props[":iframe"][p][":size"][":height"],
+                      width: props[":iframe"][p][":size"][":width"],
+                    },
+                  ])
+                ),
+              },
             };
           };
           window.fixViewType = ({
