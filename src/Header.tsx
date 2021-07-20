@@ -96,7 +96,7 @@ const Header = ({ links }: Props): React.ReactElement => {
 
 export const ID = "roamjs-header";
 
-if (typeof document !== "undefined") {
+if (process.env.CLIENT_SIDE) {
   ReactDOM.hydrate(
     <Header {...(window.roamjsProps.header as Props)} />,
     document.getElementById(ID)
@@ -118,19 +118,21 @@ export const render: RenderFunction = (dom, props, context) => {
   const { document } = dom.window;
   const { body, head } = document;
   const container = document.createElement("div");
-  container.id = "div";
+  container.id = ID;
   body.insertBefore(container, body.firstElementChild);
   container.innerHTML = innerHtml;
   ensureReact(document);
   const propScript = document.createElement("script");
-  propScript.innerText = `window.roamjsProps = {
+  propScript.innerHTML = `window.roamjsProps = {
     ...window.roamjsProps,
-    ...(${JSON.stringify(componentProps)})    
-  }`;
+    header: ${JSON.stringify(componentProps)}
+}`;
+  propScript.type = 'text/javascript'
   head.appendChild(propScript);
   const componentScript = document.createElement("script");
   componentScript.src = "https://roamjs.com/static-site/header.js";
   componentScript.defer = true;
+  head.appendChild(componentScript);
 };
 
 export default Header;
