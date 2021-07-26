@@ -143,6 +143,7 @@ const renderComponent = <T extends Record<string, unknown>>({
   return component;
 };
 
+const pageReferences: { current: { [p: string]: string[] } } = { current: {} };
 const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
   const ruleType = text.trim().toUpperCase();
   if (ruleType === "STARTS WITH" && children.length) {
@@ -154,19 +155,10 @@ const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
     return (title: string) => DAILY_NOTE_PAGE_TITLE_REGEX.test(title);
   } else if (ruleType === "ALL") {
     return () => true;
-  }
-  return undefined;
-};
-
-const getContentRuleFromNode = ({ rule: text, values: children }: Filter) => {
-  if (text.trim().toUpperCase() === "TAGGED WITH" && children.length) {
+  } else if (ruleType === "TAGGED WITH" && children.length) {
     const tag = extractTag(children[0]);
-    const findTag = (content: TreeNode) =>
-      content.text.includes(`#${tag}`) ||
-      content.text.includes(`[[${tag}]]`) ||
-      content.text.includes(`${tag}::`) ||
-      content.children.some(findTag);
-    return (content: TreeNode[]) => content.some(findTag);
+    const references = pageReferences.current[tag];
+    return (title: string) => references.includes(title);
   }
   return undefined;
 };
@@ -436,6 +428,7 @@ export const renderHtmlFromPage = ({
   const useInlineBlockReferences = pluginKeys.includes(
     "inline-block-references"
   );
+
   const markedContent = convertContentToHtml({
     content: preparedContent,
     viewType: pageContent.viewType,
@@ -802,23 +795,32 @@ export const run = async ({
                 }, {} as { [uid: string]: { uid: string; title: string }[] });
             })
           : ({} as { [uid: string]: { uid: string; title: string }[] });
+        pageReferences.current = await page
+          .evaluate(() =>
+            window.roamAlphaAPI.q(
+              "[:find ?t ?title :where [?parent :node/title ?title] [?b :block/page ?parent] [?b :block/refs ?p] [?p :node/title ?t]]"
+            )
+          )
+          .then((prs) =>
+            prs.reduce(
+              (prev, cur: string[]) => ({
+                ...prev,
+                [cur[0]]: [...(prev[cur[0]] || []), cur[1]],
+              }),
+              {} as { [p: string]: string[] }
+            )
+          );
         const getReferences = (t: TreeNode): HydratedTreeNode => ({
           ...t,
           references: blockReferences[t.uid] || [],
           children: t.children.map(getReferences),
         });
 
-        const titleFilters = config.filter.length
-          ? config.filter.map(getTitleRuleFromNode).filter((f) => !!f)
-          : [() => false];
-        const contentFilters = config.filter
-          .map(getContentRuleFromNode)
+        const titleFilters = config.filter
+          .map(getTitleRuleFromNode)
           .filter((f) => !!f);
-
         const titleFilter = (t: string) =>
           !titleFilters.length || titleFilters.some((r) => r && r(t));
-        const contentFilter = (c: TreeNode[]) =>
-          !contentFilters.length || contentFilters.some((r) => r && r(c));
 
         info(`querying data ${new Date().toLocaleTimeString()}`);
         const pageNamesWithContent = await Promise.all(
@@ -843,64 +845,59 @@ export const run = async ({
           } pages ${new Date().toLocaleTimeString()}`
         );
         const entries = await Promise.all(
-          pageNamesWithContent
-            .filter(
-              ({ pageName, content }) =>
-                pageName === config.index || contentFilter(content)
-            )
-            .map(({ pageName, content }) => {
-              return Promise.all([
-                page.evaluate(
-                  (pageName: string) =>
-                    window.roamAlphaAPI
-                      .q(
-                        `[:find ?rt ?r :where [?pr :node/title ?rt] [?r :block/page ?pr] [?r :block/refs ?p] [?p :node/title "${pageName
-                          .replace(/\\/, "\\\\")
-                          .replace(/"/g, '\\"')}"]]`
-                      )
-                      .map((args) => ({
-                        title: args[0] as string,
-                        node: window.fixViewType({
-                          c: window.getTreeByBlockId(args[1] as number),
-                          v: "bullet",
-                        }),
-                      })),
-                  pageName
-                ),
-                page.evaluate(
-                  (pageName) =>
-                    (window.roamAlphaAPI.q(
-                      `[:find ?v :where [?e :children/view-type ?v] [?e :node/title "${pageName
+          pageNamesWithContent.map(({ pageName, content }) => {
+            return Promise.all([
+              page.evaluate(
+                (pageName: string) =>
+                  window.roamAlphaAPI
+                    .q(
+                      `[:find ?rt ?r :where [?pr :node/title ?rt] [?r :block/page ?pr] [?r :block/refs ?p] [?p :node/title "${pageName
                         .replace(/\\/, "\\\\")
                         .replace(/"/g, '\\"')}"]]`
-                    )?.[0]?.[0] as ViewType) || "bullet",
-                  pageName
-                ),
-                page.evaluate(
-                  (pageName) =>
-                    (window.roamAlphaAPI.q(
-                      `[:find ?u :where [?e :block/uid ?u] [?e :node/title "${pageName
-                        .replace(/\\/, "\\\\")
-                        .replace(/"/g, '\\"')}"]]`
-                    )?.[0]?.[0] as ViewType) || "bullet",
-                  pageName
-                ),
-              ])
-                .then(([references, viewType, uid]) => ({
-                  references: references.map((r) => ({
-                    ...r,
-                    node: getReferences(r.node),
-                  })),
-                  pageName,
-                  content: content.map(getReferences),
-                  viewType,
-                  uid,
-                }))
-                .catch((e) => {
-                  console.error("Failed to find references for page", pageName);
-                  throw new Error(e);
-                });
-            })
+                    )
+                    .map((args) => ({
+                      title: args[0] as string,
+                      node: window.fixViewType({
+                        c: window.getTreeByBlockId(args[1] as number),
+                        v: "bullet",
+                      }),
+                    })),
+                pageName
+              ),
+              page.evaluate(
+                (pageName) =>
+                  (window.roamAlphaAPI.q(
+                    `[:find ?v :where [?e :children/view-type ?v] [?e :node/title "${pageName
+                      .replace(/\\/, "\\\\")
+                      .replace(/"/g, '\\"')}"]]`
+                  )?.[0]?.[0] as ViewType) || "bullet",
+                pageName
+              ),
+              page.evaluate(
+                (pageName) =>
+                  (window.roamAlphaAPI.q(
+                    `[:find ?u :where [?e :block/uid ?u] [?e :node/title "${pageName
+                      .replace(/\\/, "\\\\")
+                      .replace(/"/g, '\\"')}"]]`
+                  )?.[0]?.[0] as ViewType) || "bullet",
+                pageName
+              ),
+            ])
+              .then(([references, viewType, uid]) => ({
+                references: references.map((r) => ({
+                  ...r,
+                  node: getReferences(r.node),
+                })),
+                pageName,
+                content: content.map(getReferences),
+                viewType,
+                uid,
+              }))
+              .catch((e) => {
+                console.error("Failed to find references for page", pageName);
+                throw new Error(e);
+              });
+          })
         );
         info(
           `content filtered to ${

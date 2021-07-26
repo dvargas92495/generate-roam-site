@@ -3,7 +3,7 @@ import fs from "fs";
 import dotenv from "dotenv";
 dotenv.config();
 
-test.skip("Run Action", async (done) => {
+test("Run Action", async (done) => {
   jest.setTimeout(600000); // 10 min
   await run({
     roamGraph: "roam-depot-developers",
@@ -14,7 +14,7 @@ test.skip("Run Action", async (done) => {
     .catch(({ message }) => fail(message));
 });
 
-test("Based on JSON", () => {
+test.skip("Based on JSON", () => {
   jest.setTimeout(600000);
   const { pages, config } = JSON.parse(
     fs.readFileSync("../../../Downloads/20210726040045.json").toString()
