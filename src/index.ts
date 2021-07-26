@@ -9,6 +9,7 @@ import {
   TreeNode,
   ViewType,
   extractTag,
+  DAILY_NOTE_PAGE_TITLE_REGEX,
 } from "roam-client";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
@@ -143,11 +144,16 @@ const renderComponent = <T extends Record<string, unknown>>({
 };
 
 const getTitleRuleFromNode = ({ rule: text, values: children }: Filter) => {
-  if (text.trim().toUpperCase() === "STARTS WITH" && children.length) {
+  const ruleType = text.trim().toUpperCase();
+  if (ruleType === "STARTS WITH" && children.length) {
     const tag = extractTag(children[0]);
     return (title: string) => {
       return title.startsWith(tag);
     };
+  } else if (ruleType === "DAILY") {
+    return (title: string) => DAILY_NOTE_PAGE_TITLE_REGEX.test(title);
+  } else if (ruleType === "ALL") {
+    return () => true;
   }
   return undefined;
 };
@@ -382,6 +388,7 @@ type PageContent = {
   description: string;
   head: string;
   viewType: ViewType;
+  uid: string;
 };
 
 const PLUGIN_RENDER: {
@@ -395,7 +402,7 @@ export const renderHtmlFromPage = ({
   pageContent,
   p,
   config,
-  pageNames,
+  pageMetadata,
   blockReferences,
   theme,
 }: {
@@ -403,17 +410,20 @@ export const renderHtmlFromPage = ({
   pageContent: PageContent;
   p: string;
   config: Required<InputConfig>;
-  pageNames: string[];
+  pageMetadata: Record<string, string>;
   theme: string;
 } & Pick<Required<RoamContext>, "blockReferences">): void => {
   const { content, references = [], title, head, description } = pageContent;
-  const pageNameSet = new Set(pageNames);
+  const pageNameSet = new Set(Object.keys(pageMetadata));
   const preparedContent = prepareContent({
     content,
   });
+  const useUid = !!config.plugins["uid-paths"];
   const convertPageNameToPath = (name: string): string =>
     name === config.index
       ? "/"
+      : useUid
+      ? pageMetadata[name]
       : `${encodeURIComponent(
           name.replace(/ /g, "_").replace(/[",?#:$;/@&=+']/g, "")
         )}`;
@@ -572,6 +582,9 @@ export const processSiteData = ({
     };
     content.forEach(forEach);
   });
+  const pageMetadata = Object.fromEntries(
+    pageNames.map((p) => [p, pages[p].uid])
+  );
   let theme = "</style>\n";
   if (config.theme.text) {
     if (config.theme.text.font) {
@@ -592,7 +605,7 @@ export const processSiteData = ({
       config,
       pageContent: pages[p],
       p,
-      pageNames,
+      pageMetadata,
       blockReferences: (t: string) => blockReferencesCache[t],
       theme,
     });
@@ -863,8 +876,17 @@ export const run = async ({
                     )?.[0]?.[0] as ViewType) || "bullet",
                   pageName
                 ),
+                page.evaluate(
+                  (pageName) =>
+                    (window.roamAlphaAPI.q(
+                      `[:find ?u :where [?e :block/uid ?u] [?e :node/title "${pageName
+                        .replace(/\\/, "\\\\")
+                        .replace(/"/g, '\\"')}"]]`
+                    )?.[0]?.[0] as ViewType) || "bullet",
+                  pageName
+                ),
               ])
-                .then(([references, viewType]) => ({
+                .then(([references, viewType, uid]) => ({
                   references: references.map((r) => ({
                     ...r,
                     node: getReferences(r.node),
@@ -872,6 +894,7 @@ export const run = async ({
                   pageName,
                   content: content.map(getReferences),
                   viewType,
+                  uid,
                 }))
                 .catch((e) => {
                   console.error("Failed to find references for page", pageName);
@@ -885,7 +908,7 @@ export const run = async ({
           } entries ${new Date().toLocaleTimeString()}`
         );
         const pages = Object.fromEntries(
-          entries.map(({ content, pageName, references, viewType }) => {
+          entries.map(({ content, pageName, ...props }) => {
             const allBlocks = content.flatMap(allBlockMapper);
             const titleMatch = allBlocks
               .find((s) => TITLE_REGEX.test(s.text))
@@ -905,11 +928,10 @@ export const run = async ({
               pageName,
               {
                 content,
-                references,
                 title,
                 head,
                 description,
-                viewType,
+                ...props,
               },
             ];
           })
