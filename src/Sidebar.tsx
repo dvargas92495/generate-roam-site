@@ -103,7 +103,7 @@ export const render: RenderFunction = (dom, props, context) => {
   }
 
   ensureReact(document, head);
-  ensureScript("sidebar", head, componentProps);
+  ensureScript("sidebar",componentProps, document, head);
 };
 
 export default Sidebar;

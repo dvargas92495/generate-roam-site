@@ -31,8 +31,9 @@ export const ensureReact = (document: Document, head = document.head): void => {
 
 export const ensureScript = (
   id: string,
-  head: HTMLHeadElement,
-  componentProps: Record<string, unknown>
+  componentProps: Record<string, unknown>,
+  document: Document,
+  head = document.head
 ): void => {
   const propScript = document.createElement("script");
   propScript.innerHTML = `window.roamjsProps = {
