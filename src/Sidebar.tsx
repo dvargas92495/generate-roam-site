@@ -6,19 +6,17 @@ import cytoscape from "cytoscape";
 
 type Props = {
   widgets: string[];
-  references: { title: string; uid: string }[];
+  references: { title: string; uid: string; path: string }[];
   pageName: string;
-  toPath: (s: string) => string;
 };
 
-const GraphWidget = ({
-  references,
-  pageName,
-  toPath,
-}: Omit<Props, "widgets">) => {
+const GraphWidget = ({ references, pageName }: Omit<Props, "widgets">) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   useEffect(() => {
+    const pathByTitle = Object.fromEntries(
+      references.map((r) => [r.title, r.path])
+    );
     cyRef.current = cytoscape({
       container: containerRef.current,
       elements: [
@@ -64,17 +62,19 @@ const GraphWidget = ({
             width: 10,
             "line-color": "#ccc",
             "curve-style": "bezier",
-            label: "data(id)",
           },
         },
       ],
     });
     cyRef.current.nodes().forEach((n) => {
       n.on("click", () => {
-        window.location.assign(toPath(n.id()));
+        const title = n.id();
+        if (title !== pageName) {
+          window.location.assign(pathByTitle[n.id()]);
+        }
       });
     });
-  }, [cyRef, containerRef]);
+  }, [cyRef, containerRef, references, pageName]);
   return (
     <div style={{ border: "1px solid #eeeeee" }}>
       <h3
@@ -112,9 +112,9 @@ export const render: RenderFunction = (dom, props, context) => {
     references: context.references.map((r) => ({
       title: r.title,
       uid: r.node.uid,
+      path: context.convertPageNameToPath(r.title),
     })),
     pageName: context.pageName,
-    toPath: context.convertPageNameToPath,
   };
   const innerHtml = ReactDOMServer.renderToString(
     <Sidebar {...componentProps} />
