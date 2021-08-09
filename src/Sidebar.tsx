@@ -70,8 +70,18 @@ const GraphWidget = ({ references, pageName }: Omit<Props, "widgets">) => {
       n.on("click", () => {
         const title = n.id();
         if (title !== pageName) {
-          window.location.assign(pathByTitle[n.id()]);
+          const path = pathByTitle[n.id()];
+          window.location.assign(path);
         }
+      });
+      n.on("mouseover", () => {
+        if (containerRef.current)
+          containerRef.current.style.cursor = pathByTitle[n.id()]
+            ? "pointer"
+            : "not-allowed";
+      });
+      n.on("mouseout", () => {
+        if (containerRef.current) containerRef.current.style.cursor = "initial";
       });
     });
   }, [cyRef, containerRef, references, pageName]);
