@@ -61,9 +61,18 @@ const GraphWidget = ({ edges }: Pick<Props, "edges">) => {
     });
   }, [cyRef, containerRef]);
   return (
-    <div>
-      <h3 style={{ background: "gray" }}>Map</h3>
-      <div ref={containerRef} />
+    <div style={{ border: "1px solid #eeeeee" }}>
+      <h3
+        style={{
+          background: "#efefef",
+          borderBottom: "1px solid #eeeeee",
+          padding: 12,
+          margin: 0,
+        }}
+      >
+        Map
+      </h3>
+      <div ref={containerRef} style={{ height: 400 }} />
     </div>
   );
 };
@@ -77,7 +86,7 @@ export const ID = "roamjs-sidebar";
 
 if (process.env.CLIENT_SIDE) {
   ReactDOM.hydrate(
-    <Sidebar {...(window.roamjsProps.header as Props)} />,
+    <Sidebar {...(window.roamjsProps.sidebar as Props)} />,
     document.getElementById(ID)
   );
 }
@@ -98,12 +107,13 @@ export const render: RenderFunction = (dom, props, context) => {
     const container = document.createElement("div");
     container.id = ID;
     container.innerHTML = innerHtml;
+    container.style.width = "100%";
     content?.appendChild(container);
-    content.style.display = 'flex';
+    content.style.display = "flex";
   }
 
   ensureReact(document, head);
-  ensureScript("sidebar",componentProps, document, head);
+  ensureScript("sidebar", componentProps, document, head);
 };
 
 export default Sidebar;
