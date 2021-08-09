@@ -539,6 +539,7 @@ export const renderHtmlFromPage = ({
     PLUGIN_RENDER[k]?.(dom, config.plugins[k], {
       convertPageNameToPath,
       references,
+      pageName: p,
     })
   );
   const newHtml = dom.serialize();

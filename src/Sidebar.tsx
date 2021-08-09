@@ -6,23 +6,32 @@ import cytoscape from "cytoscape";
 
 type Props = {
   widgets: string[];
-  edges: (readonly [string, string])[];
+  references: { title: string; uid: string }[];
+  pageName: string;
+  toPath: (s: string) => string;
 };
 
-const GraphWidget = ({ edges }: Pick<Props, "edges">) => {
+const GraphWidget = ({
+  references,
+  pageName,
+  toPath,
+}: Omit<Props, "widgets">) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   useEffect(() => {
     cyRef.current = cytoscape({
       container: containerRef.current,
       elements: [
-        ...Array.from(new Set(edges.flatMap((a) => a))).map((id) => ({
+        ...[
+          pageName,
+          ...Array.from(new Set(references.map((a) => a.title))),
+        ].map((id) => ({
           data: { id },
         })),
-        ...edges.map(([source, target], id) => ({
+        ...references.map(({ title: target, uid: id }) => ({
           data: {
-            id: id.toString(),
-            source,
+            id,
+            source: pageName,
             target,
           },
         })),
@@ -43,9 +52,10 @@ const GraphWidget = ({ edges }: Pick<Props, "edges">) => {
             "text-wrap": "wrap",
             "text-halign": "center",
             "text-valign": "center",
-            "text-max-width": "80",
-            width: 80,
-            height: 80,
+            "text-max-width": "60",
+            "font-size": "12px",
+            width: 60,
+            height: 60,
           },
         },
         {
@@ -58,6 +68,11 @@ const GraphWidget = ({ edges }: Pick<Props, "edges">) => {
           },
         },
       ],
+    });
+    cyRef.current.nodes().forEach((n) => {
+      n.on("click", () => {
+        window.location.assign(toPath(n.id()));
+      });
     });
   }, [cyRef, containerRef]);
   return (
@@ -77,9 +92,9 @@ const GraphWidget = ({ edges }: Pick<Props, "edges">) => {
   );
 };
 
-const Sidebar = ({ widgets, edges }: Props): React.ReactElement => {
+const Sidebar = ({ widgets, ...rest }: Props): React.ReactElement => {
   const widgetSet = new Set(widgets);
-  return <>{widgetSet.has("graph") && <GraphWidget edges={edges} />}</>;
+  return <>{widgetSet.has("graph") && <GraphWidget {...rest} />}</>;
 };
 
 export const ID = "roamjs-sidebar";
@@ -94,7 +109,12 @@ if (process.env.CLIENT_SIDE) {
 export const render: RenderFunction = (dom, props, context) => {
   const componentProps = {
     widgets: props["widgets"] || [],
-    edges: context.references.map((r) => [r.title, r.node.text] as const),
+    references: context.references.map((r) => ({
+      title: r.title,
+      uid: r.node.uid,
+    })),
+    pageName: context.pageName,
+    toPath: context.convertPageNameToPath,
   };
   const innerHtml = ReactDOMServer.renderToString(
     <Sidebar {...componentProps} />
@@ -104,12 +124,22 @@ export const render: RenderFunction = (dom, props, context) => {
   const { head } = document;
   const content = document.getElementById("content");
   if (content) {
+    content.style.display = "flex";
     const container = document.createElement("div");
+    const newContentContainer = document.createElement("div");
+    newContentContainer.style.flexGrow = "1";
     container.id = ID;
     container.innerHTML = innerHtml;
-    container.style.width = "100%";
-    content?.appendChild(container);
-    content.style.display = "flex";
+    container.style.width = "33%";
+    container.style.minWidth = "200px";
+    Array.from(content.children).forEach((c) =>
+      newContentContainer.appendChild(c)
+    );
+    content.appendChild(newContentContainer);
+    content.appendChild(container);
+  }
+  if (componentProps.widgets.includes("graph")) {
+    document.getElementById("references")?.remove();
   }
 
   ensureReact(document, head);

@@ -12,6 +12,7 @@ export type RenderFunction = (
   context: {
     convertPageNameToPath: (s: string) => string;
     references: { title: string; node: HydratedTreeNode }[];
+    pageName: string;
   }
 ) => void;
 
