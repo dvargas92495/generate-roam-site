@@ -5,6 +5,7 @@ module.exports = () => ({
   mode: "production",
   entry: {
     header: "./src/Header.tsx",
+    sidebar: "./src/Sidebar.tsx",
   },
   resolve: {
     modules: ["node_modules"],

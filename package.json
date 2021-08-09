@@ -20,6 +20,7 @@
   "dependencies": {
     "chrome-aws-lambda": "^5.5.0",
     "copyfiles": "^2.4.1",
+    "cytoscape": "^3.19.0",
     "jsdom": "^16.6.0",
     "puppeteer-core": "^5.5.0",
     "react": "^17.0.2",
@@ -28,6 +29,7 @@
     "roam-marked": "^0.10.14"
   },
   "devDependencies": {
+    "@types/cytoscape": "^3.14.17",
     "@types/jest": "^26.0.19",
     "@types/jsdom": "^16.2.13",
     "@types/puppeteer": "^5.4.2",

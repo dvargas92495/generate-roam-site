@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import ReactDOM from "react-dom";
 import ReactDOMServer from "react-dom/server";
 import { extractTag } from "roam-client";
@@ -9,9 +9,6 @@ type Props = {
 };
 
 const Header = ({ links }: Props): React.ReactElement => {
-  useEffect(() => {
-    console.log("react loaded!");
-  }, []);
   return (
     <>
       <style>

@@ -17,12 +17,8 @@ import { JSDOM } from "jsdom";
 import DailyLog from "./DailyLog";
 import InlineBlockReference from "./InlineBlockReference";
 import { render as renderHeader } from "./Header";
-import { RenderFunction } from "./util";
-
-type HydratedTreeNode = Omit<TreeNode, "children"> & {
-  references: { title: string; uid: string }[];
-  children: HydratedTreeNode[];
-};
+import { render as renderSidebar } from "./Sidebar";
+import { HydratedTreeNode, RenderFunction } from "./util";
 
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
 const IGNORE_BLOCKS = CONFIG_PAGE_NAMES.map((c) => `${c}/ignore`);
@@ -387,6 +383,7 @@ const PLUGIN_RENDER: {
   [key: string]: RenderFunction;
 } = {
   header: renderHeader,
+  sidebar: renderSidebar,
 };
 
 export const renderHtmlFromPage = ({
@@ -539,7 +536,10 @@ export const renderHtmlFromPage = ({
     );
   const dom = new JSDOM(hydratedHtml);
   pluginKeys.forEach((k) =>
-    PLUGIN_RENDER[k]?.(dom, config.plugins[k], { convertPageNameToPath })
+    PLUGIN_RENDER[k]?.(dom, config.plugins[k], {
+      convertPageNameToPath,
+      references,
+    })
   );
   const newHtml = dom.serialize();
   const fileName = htmlFileName === "/" ? "index.html" : `${htmlFileName}.html`;
