@@ -55,29 +55,23 @@ const ImagePreview = (): React.ReactElement => {
 export const ID = "roamjs-image-preview";
 
 if (process.env.CLIENT_SIDE) {
-  ReactDOM.hydrate(
-    <ImagePreview />,
-    document.getElementById(ID)
-  );
+  ReactDOM.hydrate(<ImagePreview />, document.getElementById(ID));
 }
 
 export const render: RenderFunction = (dom) => {
-  const componentProps = {};
-  const innerHtml = ReactDOMServer.renderToString(
-    <ImagePreview {...componentProps} />
-  );
-
   const { document } = dom.window;
   const { head, body } = document;
   const imgs = document.querySelectorAll(".roam-block img");
-  imgs.forEach((img) => img.classList.add("roamjs-image-preview-img"));
-  const container = document.createElement("div");
-  container.id = ID;
-  container.innerHTML = innerHtml;
-  body.appendChild(container);
+  if (imgs.length) {
+    imgs.forEach((img) => img.classList.add("roamjs-image-preview-img"));
+    const container = document.createElement("div");
+    container.id = ID;
+    container.innerHTML = ReactDOMServer.renderToString(<ImagePreview />);
+    body.appendChild(container);
 
-  ensureReact(document, head);
-  ensureScript("image-preview", componentProps, document, head);
+    ensureReact(document, head);
+    ensureScript("image-preview", {}, document, head);
+  }
 };
 
 export default ImagePreview;

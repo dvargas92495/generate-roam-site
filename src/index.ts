@@ -18,6 +18,7 @@ import DailyLog from "./DailyLog";
 import InlineBlockReference from "./InlineBlockReference";
 import { render as renderHeader } from "./Header";
 import { render as renderSidebar } from "./Sidebar";
+import { render as renderImagePreview } from "./ImagePreview";
 import { HydratedTreeNode, RenderFunction } from "./util";
 
 const CONFIG_PAGE_NAMES = ["roam/js/static-site", "roam/js/public-garden"];
@@ -382,6 +383,7 @@ const PLUGIN_RENDER: {
 } = {
   header: renderHeader,
   sidebar: renderSidebar,
+  'image-preview': renderImagePreview,
 };
 
 export const renderHtmlFromPage = ({
