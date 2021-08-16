@@ -317,7 +317,7 @@ const convertContentToHtml = ({
       }
       return false;
     };
-    const classlist = ['roam-block'];
+    const classlist = ["roam-block"];
     const textToParse = t.text.replace(/#\.([^\s]*)/g, (_, className) => {
       classlist.push(className);
       return "";
