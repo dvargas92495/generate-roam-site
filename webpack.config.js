@@ -1,12 +1,13 @@
 const path = require("path");
 const TerserPlugin = require("terser-webpack-plugin");
-const webpack = require('webpack');
+const webpack = require("webpack");
 
 module.exports = () => ({
   mode: "production",
   entry: {
     header: "./src/Header.tsx",
     sidebar: "./src/Sidebar.tsx",
+    "image-preview": "./src/ImagePreview.tsx",
   },
   resolve: {
     modules: ["node_modules"],

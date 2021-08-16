@@ -317,7 +317,7 @@ const convertContentToHtml = ({
       }
       return false;
     };
-    const classlist = [];
+    const classlist = ['roam-block'];
     const textToParse = t.text.replace(/#\.([^\s]*)/g, (_, className) => {
       classlist.push(className);
       return "";
@@ -354,9 +354,7 @@ const convertContentToHtml = ({
     if (level > 0 && viewType === "document") {
       classlist.push("document-bullet");
     }
-    const attrs = `id="${t.uid}"${
-      classlist.length ? ` class="${classlist.join(" ")}"` : ""
-    }`;
+    const attrs = `id="${t.uid}" class="${classlist.join(" ")}"`;
     const blockHtml =
       level === 0 && viewType === "document"
         ? `<div ${attrs}>${innerHtml}</div>`
