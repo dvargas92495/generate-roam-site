@@ -383,7 +383,7 @@ const PLUGIN_RENDER: {
 } = {
   header: renderHeader,
   sidebar: renderSidebar,
-  'image-preview': renderImagePreview,
+  "image-preview": renderImagePreview,
 };
 
 export const renderHtmlFromPage = ({
