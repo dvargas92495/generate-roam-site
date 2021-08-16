@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import ReactDOM from "react-dom";
 import ReactDOMServer from "react-dom/server";
 import { Dialog } from "@blueprintjs/core";
