@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build:tsc": "tsc",
+    "build": "ncc build src/index.ts -o dist",
     "build:components": "webpack",
     "format": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint . --ext .ts",
@@ -38,7 +39,7 @@
     "@types/react-dom": "^17.0.3",
     "@typescript-eslint/eslint-plugin": "^4.11.0",
     "@typescript-eslint/parser": "^4.11.0",
-    "@vercel/ncc": "^0.26.1",
+    "@vercel/ncc": "^0.29.1",
     "babel-loader": "^8.2.2",
     "css-loader": "^6.2.0",
     "dotenv": "^8.2.0",
