@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import ReactDOMServer from "react-dom/server";
 import { Dialog } from "@blueprintjs/core";
-import { ensureReact, ensureScript, RenderFunction } from "./util";
+import { ensureBlueprint, ensureReact, ensureScript, RenderFunction } from "./util";
 
 const ImagePreview = (): React.ReactElement => {
   const [src, setSrc] = useState("");
@@ -46,7 +46,7 @@ const ImagePreview = (): React.ReactElement => {
         portalClassName={"roamjs-image-preview-portal"}
         style={{ paddingBottom: 0 }}
       >
-        <img src={src} />
+        <img src={src} ref={imgRef}/>
       </Dialog>
     </>
   );
@@ -69,6 +69,7 @@ export const render: RenderFunction = (dom) => {
     container.innerHTML = ReactDOMServer.renderToString(<ImagePreview />);
     body.appendChild(container);
 
+    ensureBlueprint(document, head);
     ensureReact(document, head);
     ensureScript("image-preview", {}, document, head);
   }
