@@ -1,6 +1,7 @@
 const path = require("path");
 const TerserPlugin = require("terser-webpack-plugin");
 const webpack = require("webpack");
+const NodePolyfillPlugin = require("node-polyfill-webpack-plugin");
 
 module.exports = () => ({
   mode: "production",
@@ -81,5 +82,6 @@ module.exports = () => ({
     new webpack.DefinePlugin({
       "process.env.CLIENT_SIDE": "true",
     }),
+    new NodePolyfillPlugin(),
   ],
 });

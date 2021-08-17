@@ -39,7 +39,7 @@ export const ensureScript = (
   const propScript = document.createElement("script");
   propScript.innerHTML = `window.roamjsProps = {
   ...window.roamjsProps,
-  ${id}: ${JSON.stringify(componentProps)}
+  "${id}": ${JSON.stringify(componentProps)}
 }`;
   propScript.type = "text/javascript";
   head.appendChild(propScript);
