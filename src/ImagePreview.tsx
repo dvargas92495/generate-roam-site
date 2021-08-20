@@ -77,6 +77,8 @@ const ImagePreview = (): React.ReactElement => {
     width: unset;
     background-color: transparent;
     box-shadow: none;
+    align-items: center;
+    justify-content: center;
 }
 
 .roamjs-image-preview-portal img {
