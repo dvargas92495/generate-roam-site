@@ -1,8 +1,13 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import ReactDOMServer from "react-dom/server";
 import { Dialog } from "@blueprintjs/core";
-import { ensureBlueprint, ensureReact, ensureScript, RenderFunction } from "./util";
+import {
+  ensureBlueprint,
+  ensureReact,
+  ensureScript,
+  RenderFunction,
+} from "./util";
 
 const ImagePreview = (): React.ReactElement => {
   const [src, setSrc] = useState("");
@@ -22,6 +27,38 @@ const ImagePreview = (): React.ReactElement => {
   useEffect(() => {
     document.body.addEventListener("click", onRootClick);
   }, [onRootClick]);
+
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [height, setHeight] = useState<string | number>('100%');
+  const [width, setWidth] = useState<string | number>('100%');
+  useEffect(() => {
+    const dummyImage = new Image();
+    dummyImage.src = src;
+    dummyImage.style.visibility = "hidden";
+    dummyImage.onload = () => {
+      document.body.appendChild(dummyImage);
+      const { clientWidth, clientHeight } = dummyImage;
+      dummyImage.remove();
+      if (imageRef.current) {
+        const containerWidth = imageRef.current.parentElement?.clientWidth || 1;
+        const containerHeight =
+          imageRef.current.parentElement?.clientHeight || 1;
+        if (clientWidth / clientHeight < containerWidth / containerHeight) {
+          setHeight(containerHeight);
+          setWidth((containerHeight * clientWidth) / clientHeight);
+        } else if (
+          clientWidth / clientHeight >
+          containerWidth / containerHeight
+        ) {
+          setHeight((containerWidth * clientHeight) / clientWidth);
+          setWidth(containerWidth);
+        } else {
+          setHeight(containerHeight);
+          setWidth(containerWidth);
+        }
+      }
+    };
+  }, [imageRef, setHeight, src, setWidth]);
   return (
     <>
       <style>{`.roamjs-image-preview-img {
@@ -39,6 +76,11 @@ const ImagePreview = (): React.ReactElement => {
     right: 32px;
     width: unset;
     background-color: transparent;
+    box-shadow: none;
+}
+
+.roamjs-image-preview-portal img {
+  background-color: white;
 }`}</style>
       <Dialog
         isOpen={!!src}
@@ -46,7 +88,7 @@ const ImagePreview = (): React.ReactElement => {
         portalClassName={"roamjs-image-preview-portal"}
         style={{ paddingBottom: 0 }}
       >
-        <img src={src} />
+        <img src={src} ref={imageRef} style={{ height, width }} />
       </Dialog>
     </>
   );
